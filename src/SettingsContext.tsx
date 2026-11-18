@@ -4,6 +4,8 @@ import { call } from '@decky/api';
 import { GameTranslatorLogic } from './Translator';
 import { InputMode } from './Input';
 import { logger } from './Logger';
+import { DEFAULT_LEARN_WORD_LAYOUT, parseLearnWordLayout } from './learn/wordLayout';
+import type { LearnWordLayout } from './learn/wordLayout';
 
 // Define the settings interface
 export interface Settings {
@@ -12,6 +14,7 @@ export interface Settings {
     inputMode: InputMode;
     enabled: boolean;
     learnMode: boolean;
+    learnWordLayout: LearnWordLayout;
     shortcutEnabled: boolean;
     initialized: boolean;
     holdTimeTranslate: number;
@@ -56,6 +59,7 @@ const initialSettings: Settings = {
     inputMode: InputMode.L5_BUTTON,  // Default to L5 back button
     enabled: true,
     learnMode: false,
+    learnWordLayout: DEFAULT_LEARN_WORD_LAYOUT,
     shortcutEnabled: false,
     initialized: false,
     holdTimeTranslate: 1000, // Default to 1 second (1000ms)
@@ -136,6 +140,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     inputMode: serverSettings.input_mode,
                     enabled: serverSettings.enabled,
                     learnMode: serverSettings.learn_mode ?? false,
+                    learnWordLayout: parseLearnWordLayout(serverSettings.learn_word_layout),
                     shortcutEnabled: serverSettings.shortcut_enabled ?? false,
                     holdTimeTranslate: serverSettings.hold_time_translate,
                     holdTimeDismiss: serverSettings.hold_time_dismiss,
@@ -175,6 +180,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 logic.setInputMode(serverSettings.input_mode);
                 logic.setEnabled(serverSettings.enabled);
                 logic.setLearnMode(mappedSettings.learnMode ?? false);
+                logic.imageState.setLearnWordLayout(mappedSettings.learnWordLayout ?? DEFAULT_LEARN_WORD_LAYOUT);
                 logic.shortcutInputHandler.setShortcutEnabled(mappedSettings.shortcutEnabled ?? false);
                 logic.setHoldTimeTranslate(serverSettings.hold_time_translate);
                 logic.setHoldTimeDismiss(serverSettings.hold_time_dismiss);
@@ -222,6 +228,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 inputMode: 'input_mode',
                 enabled: 'enabled',
                 learnMode: 'learn_mode',
+                learnWordLayout: 'learn_word_layout',
                 shortcutEnabled: 'shortcut_enabled',
                 initialized: 'initialized',
                 holdTimeTranslate: 'hold_time_translate',
@@ -274,6 +281,9 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     break;
                 case 'learnMode':
                     logic.setLearnMode(value);
+                    break;
+                case 'learnWordLayout':
+                    logic.imageState.setLearnWordLayout(parseLearnWordLayout(value));
                     break;
                 case 'shortcutEnabled':
                     logic.shortcutInputHandler.setShortcutEnabled(value);

@@ -10,6 +10,8 @@ import { buildTranslatedFontFamily, ensureFontLoaded, resolveFontStyleCSS } from
 import type { FontStyleOption } from "./fonts";
 import { LearnOverlay } from "./learn/LearnOverlay";
 import type { LearnControls } from "./learn/LearnOverlay";
+import { DEFAULT_LEARN_WORD_LAYOUT } from "./learn/wordLayout";
+import type { LearnWordLayout } from "./learn/wordLayout";
 
 export type HorizontalTextAlignment = 'left' | 'right' | 'center' | 'justify';
 
@@ -49,6 +51,7 @@ const CompositionRequest: VFC<{ level: UIComposition }> = ({ level }) => {
 
 interface LearnView {
     targetLanguage: string;
+    wordLayout: LearnWordLayout;
 }
 
 // Enhanced ImageState to handle translated text regions
@@ -57,6 +60,7 @@ export class ImageState {
     private imageData = "";
     private translatedRegions: TranslatedRegion[] = [];
     private learnView: LearnView | null = null;
+    private learnWordLayout = DEFAULT_LEARN_WORD_LAYOUT;
     private loading = false;
     private processingStep = ""; // Added to track current processing step
     private processingDetail = "";
@@ -199,7 +203,7 @@ export class ImageState {
         this.notifyListeners();
     }
 
-    showTranslatedImage(imageData: string, regions: TranslatedRegion[], learnView: LearnView | null = null): void {
+    showTranslatedImage(imageData: string, regions: TranslatedRegion[], learnView: Pick<LearnView, "targetLanguage"> | null = null): void {
         // Clear any pending timer
         if (this.loadingIndicatorTimer) {
             clearTimeout(this.loadingIndicatorTimer);
@@ -211,7 +215,7 @@ export class ImageState {
 
         // Set the translated regions
         this.translatedRegions = regions;
-        this.learnView = learnView;
+        this.learnView = learnView && { ...learnView, wordLayout: this.learnWordLayout };
 
         // Ensure the overlay is visible
         this.visible = true;
@@ -257,6 +261,14 @@ export class ImageState {
 
     getLearnView(): LearnView | null {
         return this.learnView;
+    }
+
+    setLearnWordLayout(layout: LearnWordLayout): void {
+        this.learnWordLayout = layout;
+        if (this.learnView && this.learnView.wordLayout !== layout) {
+            this.learnView = { ...this.learnView, wordLayout: layout };
+            this.notifyListeners();
+        }
     }
 
     private notifyListeners(): void {
@@ -553,6 +565,7 @@ export const TranslatedTextOverlay: VFC<{
                         const { widthFactor, heightFactor } = getScalingFactor();
                         return <LearnOverlay {...learnControls} regions={regions}
                             targetLanguage={learnView.targetLanguage}
+                            wordLayout={learnView.wordLayout}
                             widthFactor={widthFactor} heightFactor={heightFactor}
                             imageHeight={imageDimensions.height}
                             captureWidth={naturalDimensions.width} captureHeight={naturalDimensions.height} />;

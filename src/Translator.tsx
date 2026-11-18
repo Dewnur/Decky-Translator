@@ -317,11 +317,11 @@ export class GameTranslatorLogic {
         this.learnMode = learnMode;
     }
 
-    translateLearnRegion = async (region: TextRegion, targetLanguage: string): Promise<string> => {
-        const [result] = await this.textTranslator.translateText(
-            [{ ...region, translatedText: undefined }], 'en', targetLanguage,
+    translateLearnRegions = async (regions: TextRegion[], targetLanguage: string): Promise<string[]> => {
+        const translations = await this.textTranslator.translateText(
+            regions.map(region => ({ ...region, translatedText: undefined })), 'en', targetLanguage,
         );
-        return result?.translatedText?.trim() ?? "";
+        return regions.map((_, index) => translations[index]?.translatedText?.trim() ?? "");
     }
 
     takeScreenshotAndTranslate = async (): Promise<void> => {

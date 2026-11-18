@@ -5,6 +5,7 @@ import {
     PanelSection,
     PanelSectionRow,
     ToggleField,
+    DropdownItem,
     Router,
     Navigation,
     DialogButton,
@@ -19,6 +20,7 @@ import showQrModal from "../showQrModal";
 import { useSettings } from "../SettingsContext";
 import { GameTranslatorLogic } from "../Translator";
 import { logger } from "../Logger";
+import { LEARN_WORD_LAYOUTS } from "../learn/wordLayout";
 
 const StatusDot: VFC<{ ok: boolean }> = ({ ok }) => (
     <span style={{
@@ -157,11 +159,21 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                         <PanelSectionRow>
                             <ToggleField
                                 label="Learn English"
-                                description="Select text on the captured frame and reveal its translation."
+                                description="Select text on the captured frame to see its translation."
                                 checked={settings.learnMode}
                                 onChange={(value) => updateSetting('learnMode', value, 'Learn English')}
                             />
                         </PanelSectionRow>
+                        {settings.learnMode && (
+                            <PanelSectionRow>
+                                <DropdownItem
+                                    label="Word translation layout"
+                                    rgOptions={[...LEARN_WORD_LAYOUTS]}
+                                    selectedOption={settings.learnWordLayout}
+                                    onChange={(option) => updateSetting('learnWordLayout', option.data, 'Word translation layout')}
+                                />
+                            </PanelSectionRow>
+                        )}
                         <PanelSectionRow>
                             <ButtonItem
                                 bottomSeparator="standard"

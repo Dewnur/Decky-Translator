@@ -1,31 +1,35 @@
 import { useEffect, useState } from "react";
 
-type Translation =
+export type StudyTranslation<Value> =
     | { status: "loading" }
-    | { status: "ready"; text: string }
+    | { status: "ready"; data: Value }
     | { status: "error"; message: string };
 
-export function useStudyTranslation(
-    source: string | null,
-    request: (text: string) => Promise<string>,
+export function useStudyTranslation<Source, Value>(
+    source: Source | null,
+    request: (source: Source) => Promise<Value>,
     delay: number,
 ) {
-    const [result, setResult] = useState<{ source: string; value: Translation }>();
+    const [result, setResult] = useState<{
+        source: Source;
+        request: typeof request;
+        attempt: number;
+        value: StudyTranslation<Value>;
+    }>();
     const [attempt, setAttempt] = useState(0);
 
     useEffect(() => {
         if (source === null) return;
 
         let active = true;
-        setResult({ source, value: { status: "loading" } });
         const timer = setTimeout(async () => {
             try {
-                const text = await request(source);
-                if (active) setResult({ source, value: { status: "ready", text } });
+                const data = await request(source);
+                if (active) setResult({ source, request, attempt, value: { status: "ready", data } });
             } catch (error) {
                 if (!active) return;
                 const message = error instanceof Error ? error.message : "Translation failed.";
-                setResult({ source, value: { status: "error", message } });
+                setResult({ source, request, attempt, value: { status: "error", message } });
             }
         }, delay);
 
@@ -35,6 +39,7 @@ export function useStudyTranslation(
         };
     }, [source, request, delay, attempt]);
 
-    const value: Translation = result?.source === source ? result.value : { status: "loading" };
+    const current = result && result.source === source && result.request === request && result.attempt === attempt;
+    const value: StudyTranslation<Value> = current ? result.value : { status: "loading" };
     return { value, retry: () => setAttempt(previous => previous + 1) };
 }

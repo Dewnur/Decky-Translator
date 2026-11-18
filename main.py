@@ -1268,6 +1268,9 @@ class Plugin:
                 self._input_mode = value
             elif key in ("learn_mode", "shortcut_enabled"):
                 value = bool(value)
+            elif key == "learn_word_layout":
+                if value not in ("row", "popover", "interlinear"):
+                    return False
             elif key == "enabled":
                 if self._provider_manager:
                     if value:
@@ -1462,6 +1465,7 @@ class Plugin:
                 "input_mode": self._input_mode,
                 "enabled": self._settings.get_setting("enabled", True),
                 "learn_mode": self._settings.get_setting("learn_mode", False),
+                "learn_word_layout": self._settings.get_setting("learn_word_layout", "interlinear"),
                 "shortcut_enabled": self._settings.get_setting("shortcut_enabled", False),
                 "use_free_providers": self._use_free_providers,
                 "ocr_provider": self._ocr_provider,

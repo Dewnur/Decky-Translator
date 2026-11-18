@@ -327,7 +327,7 @@ export default definePlugin(() => {
     const learnControls = {
         dismiss: logic.dismiss,
         subscribeToButtonPresses: logic.shortcutInputHandler.subscribeToButtonPresses,
-        translateRegion: logic.translateLearnRegion,
+        translateRegions: logic.translateLearnRegions,
     };
 
     // Add image overlay as a global component

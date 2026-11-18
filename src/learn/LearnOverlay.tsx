@@ -5,16 +5,20 @@ import type { TextRegion } from "../TextRecognizer";
 import { segmentText } from "./segmentText";
 import { findInitialStudyRegion } from "./subtitlePriority";
 import { useStudyTranslation } from "./useStudyTranslation";
+import { translateStudyTexts } from "./studyTranslationCache";
+import { StudyWordPopover } from "./StudyWordPopover";
+import type { LearnWordLayout } from "./wordLayout";
 
 export interface LearnControls {
     dismiss: () => void;
     subscribeToButtonPresses: Input['subscribeToButtonPresses'];
-    translateRegion: (region: TextRegion, targetLanguage: string) => Promise<string>;
+    translateRegions: (regions: TextRegion[], targetLanguage: string) => Promise<string[]>;
 }
 
 interface LearnOverlayProps extends LearnControls {
     regions: TextRegion[];
     targetLanguage: string;
+    wordLayout: LearnWordLayout;
     widthFactor: number;
     heightFactor: number;
     imageHeight: number;
@@ -23,50 +27,62 @@ interface LearnOverlayProps extends LearnControls {
 }
 
 export function LearnOverlay({
-    regions, targetLanguage, widthFactor, heightFactor, imageHeight, captureWidth, captureHeight,
-    dismiss, subscribeToButtonPresses, translateRegion,
+    regions, targetLanguage, wordLayout, widthFactor, heightFactor, imageHeight, captureWidth, captureHeight,
+    dismiss, subscribeToButtonPresses, translateRegions,
 }: LearnOverlayProps) {
     const [selection, setSelection] = useState(() => ({
         region: findInitialStudyRegion(regions, captureWidth, captureHeight),
         part: 0,
-        words: false,
+        words: true,
     }));
     const requests = useRef(new Map<string, Promise<string>>());
     const selectedPart = useRef<HTMLButtonElement>(null);
 
     const region = regions[selection.region];
     const segments = useMemo(() => segmentText(region.text, selection.words), [region.text, selection.words]);
-    const parts = segments.filter(segment => segment.selectable);
+    const parts = useMemo(() => segments.filter(segment => segment.selectable), [segments]);
+    const sources = useMemo(() => [...new Set(parts.map(part => part.text))], [parts]);
     const targetConfigured = !!targetLanguage && targetLanguage !== 'en';
     const selectedWord = selection.words ? parts[selection.part]?.text : undefined;
+    const activeLayout = selection.words ? wordLayout : undefined;
     const panelAtTop = (region.rect.top + region.rect.bottom) * heightFactor / 2 > imageHeight / 2;
 
-    const request = useCallback((text: string) => {
-        const key = JSON.stringify([targetLanguage, text]);
-        const existing = requests.current.get(key);
-        if (existing) return existing;
+    const requestTexts = useCallback((texts: readonly string[]) =>
+        translateStudyTexts(requests.current, targetLanguage, texts,
+            missing => translateRegions(missing.map(text => ({ ...region, text })), targetLanguage)),
+    [region, targetLanguage, translateRegions]);
 
-        const pending = translateRegion({ ...region, text }, targetLanguage)
-            .then(translated => {
-                if (!translated || translated === text.trim()) requests.current.delete(key);
-                return translated;
-            })
-            .catch(error => {
-                requests.current.delete(key);
-                throw error;
-            });
-        requests.current.set(key, pending);
-        return pending;
-    }, [region, targetLanguage, translateRegion]);
+    const requestText = useCallback(async (text: string) => {
+        const [translation] = await requestTexts([text]);
+        return translation;
+    }, [requestTexts]);
 
-    const blockTranslation = useStudyTranslation(targetConfigured ? region.text : null, request, 120);
+    const requestWords = useCallback(async (words: readonly string[]) => {
+        const translations = await requestTexts(words);
+        return new Map(words.map((word, index) => [word, translations[index]]));
+    }, [requestTexts]);
+
+    const blockTranslation = useStudyTranslation(targetConfigured ? region.text : null, requestText, 120);
+    const canTranslateWords = targetConfigured && blockTranslation.value.status === "ready";
     const wordTranslation = useStudyTranslation(
-        blockTranslation.value.status === "ready" ? selectedWord ?? null : null,
-        request,
+        canTranslateWords && activeLayout !== "interlinear" ? selectedWord ?? null : null,
+        requestText,
         250,
     );
+    const interlinearTranslation = useStudyTranslation(
+        canTranslateWords && activeLayout === "interlinear" && sources.length ? sources : null,
+        requestWords,
+        180,
+    );
+    const individualWordVisible = !!selectedWord && targetConfigured && blockTranslation.value.status !== "error";
+    const showPopover = individualWordVisible && activeLayout === "popover";
+    const showGlosses = targetConfigured && activeLayout === "interlinear";
+    const interlinearError = showGlosses && interlinearTranslation.value.status === "error"
+        ? interlinearTranslation.value.message : null;
     const failedTranslation = blockTranslation.value.status === "error" ? blockTranslation
-        : selectedWord && wordTranslation.value.status === "error" ? wordTranslation : null;
+        : interlinearError ? interlinearTranslation
+        : individualWordVisible && activeLayout !== "interlinear" && wordTranslation.value.status === "error"
+            ? wordTranslation : null;
 
     function selectRegion(index: number) {
         setSelection(previous => ({ ...previous, region: index, part: 0 }));
@@ -93,9 +109,18 @@ export function LearnOverlay({
         switch (value.status) {
             case "loading": return "Translating…";
             case "error": return value.message;
-            case "ready": return value.text && value.text !== source.trim()
-                ? value.text : "No distinct translation returned.";
+            case "ready": return distinctTranslation(value.data, source) || "No distinct translation returned.";
         }
+    }
+
+    function distinctTranslation(text: string | undefined, source: string): string | undefined {
+        return text && text !== source.trim() ? text : undefined;
+    }
+
+    function glossFor(word: string): string {
+        if (blockTranslation.value.status === "error" || interlinearTranslation.value.status === "error") return "—";
+        if (interlinearTranslation.value.status === "loading") return "…";
+        return distinctTranslation(interlinearTranslation.value.data.get(word), word) ?? "—";
     }
 
     const handleButton = useRef<(button: Button) => void>(() => {});
@@ -115,7 +140,7 @@ export function LearnOverlay({
 
     useEffect(() => {
         selectedPart.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-    }, [selection.region, selection.part, selection.words]);
+    }, [selection.region, selection.part, activeLayout, interlinearTranslation.value.status]);
 
     let partIndex = 0;
     return (
@@ -135,10 +160,34 @@ export function LearnOverlay({
                 .dlt-study-text button {
                     background: transparent; padding: 0 2px; border: 1px solid transparent; border-radius: 4px;
                 }
-                .dlt-study-text[data-words="true"] button { border-bottom-color: #62748c; }
-                .dlt-study-text[data-words] button[aria-pressed="true"] {
+                .dlt-study-text[data-layout] button { border-bottom-color: #62748c; }
+                .dlt-study-text button[aria-pressed="true"] {
                     color: var(--dlt-selection); background: var(--dlt-selection-fill);
                     border-color: var(--dlt-selection);
+                }
+                .dlt-study-text[data-glosses="true"] { max-height: 19vh; }
+                .dlt-study-text[data-glosses="true"] button {
+                    display: inline-flex; flex-direction: column; align-items: center;
+                    vertical-align: top; max-width: 100%; white-space: normal; padding: 2px 4px;
+                    background: #172638; margin-bottom: 3px;
+                }
+                .dlt-study-text[data-glosses="true"] button[aria-pressed="true"] { background: var(--dlt-selection-fill); }
+                .dlt-study-gloss { color: #bdcddd; font-size: 0.78em; line-height: 1.25; }
+                .dlt-study-text button[aria-pressed="true"] .dlt-study-gloss { color: var(--dlt-selection); }
+                .dlt-study-original { position: relative; }
+                .dlt-study-original[data-popover="true"] { padding-top: 3.3em; }
+                .dlt-study-popover {
+                    position: absolute; transform: translateY(-100%); z-index: 2; visibility: hidden;
+                    box-sizing: border-box; width: max-content; max-width: min(17em, 100%);
+                    padding: 3px 7px; border: 1px solid var(--dlt-selection); border-radius: 4px;
+                    color: var(--dlt-selection); background: #1d3855; pointer-events: none;
+                }
+                .dlt-study-popover > span { display: block; max-height: 2.4em; overflow: hidden; }
+                .dlt-study-popover::after {
+                    content: ""; position: absolute; bottom: -4px; left: var(--dlt-arrow);
+                    width: 6px; height: 6px; transform: translateX(-50%) rotate(45deg);
+                    background: #1d3855; border-right: 1px solid var(--dlt-selection);
+                    border-bottom: 1px solid var(--dlt-selection);
                 }
                 .dlt-study-caption { color: #bdcddd; font-size: 0.75em; }
                 .dlt-study-word { margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--dlt-selection); }
@@ -190,21 +239,31 @@ export function LearnOverlay({
                     <button type="button" onClick={dismiss}>Close</button>
                 </div>
                 <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>
-                    <div lang="en" className="dlt-study-text" data-words={selection.words}>
-                        {segments.map(segment => {
-                            if (!segment.selectable) return <span key={segment.start}>{segment.text}</span>;
-                            const index = partIndex++;
-                            const selected = index === selection.part;
-                            return (
-                                <button key={segment.start} type="button" aria-pressed={selected}
-                                    ref={selected ? selectedPart : undefined}
-                                    onClick={() => setSelection(previous => ({ ...previous, part: index }))}>
-                                    {segment.text}
-                                </button>
-                            );
-                        })}
+                    <div className="dlt-study-original" data-popover={showPopover}>
+                        {showGlosses && <div className="dlt-study-caption">Words on their own</div>}
+                        <div lang="en" className="dlt-study-text" data-layout={activeLayout} data-glosses={showGlosses}>
+                            {segments.map(segment => {
+                                if (!segment.selectable) return <span key={segment.start}>{segment.text}</span>;
+                                const index = partIndex++;
+                                const selected = index === selection.part;
+                                return (
+                                    <button key={segment.start} type="button" aria-pressed={selected}
+                                        ref={selected ? selectedPart : undefined}
+                                        onClick={() => setSelection(previous => ({ ...previous, part: index }))}>
+                                        <span>{segment.text}</span>
+                                        {showGlosses && (
+                                            <span className="dlt-study-gloss" lang={targetLanguage} dir="auto">{glossFor(segment.text)}</span>
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {showPopover && selectedWord && (
+                            <StudyWordPopover anchor={selectedPart} targetLanguage={targetLanguage}
+                                translation={translationText(wordTranslation.value, selectedWord)} />
+                        )}
                     </div>
-                    {selectedWord && targetConfigured && blockTranslation.value.status !== "error" && (
+                    {individualWordVisible && activeLayout === "row" && selectedWord && (
                         <div className="dlt-study-word">
                             <div className="dlt-study-caption">Word on its own</div>
                             <div className="dlt-study-word-pair" aria-live="polite">
@@ -214,6 +273,7 @@ export function LearnOverlay({
                             </div>
                         </div>
                     )}
+                    {interlinearError && <div role="alert" className="dlt-study-caption">{interlinearError}</div>}
                     <div className="dlt-study-translation">
                         <div className="dlt-study-caption">Translation</div>
                         <div aria-live="polite" className="dlt-study-translation-text" lang={targetConfigured ? targetLanguage : undefined} dir="auto">

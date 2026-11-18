@@ -8,8 +8,9 @@ The fork uses its own plugin name, installation directory, settings, models and 
 
 Install Decky Loader, then open **Decky Settings → Developer** after enabling **Developer Mode**.
 Choose **Install Plugin from ZIP file** and select `Decky.Language.Tutor.zip` from a build artifact or release.
-The ZIP includes the Linux runtime and Python packages. Optional offline OCR and translation models
-are downloaded in the **Translation** tab.
+The ZIP is small. Decky Loader downloads and verifies the Linux runtime and Python packages during
+installation (about 173 MiB). Keep the Deck online until installation finishes.
+Optional offline OCR and translation models are downloaded in the **Translation** tab.
 
 ## Study English
 
@@ -28,12 +29,16 @@ uses a captured frame. Game input behavior can vary with Steam Input and the gam
 ## Build and package
 
 Use Node 20 and pnpm 9. Run `pnpm install --frozen-lockfile`, `pnpm typecheck`, and `pnpm build`.
-The GitHub Actions workflow builds the Linux x86-64 `plugin-dependencies.tar.gz` and runs
-`pnpm package` to create `out/Decky.Language.Tutor.zip`. For local packaging, place the Linux
-dependency archive at the repository root before running `pnpm package`.
+Run `pnpm package` to create `out/Decky.Language.Tutor.zip`. Local builds and CI build artifacts
+use the checksum-pinned Linux dependency archive from Decky Translator 0.9.1. Release builds use
+the fork's own archive from the same GitHub release.
 
-A manual workflow run with a version matching `package.json` creates a draft GitHub Release.
-Without a version, the workflow produces downloadable build artifacts.
+For installation without downloading runtime dependencies on the Deck, run
+`pnpm package:full /path/to/plugin-dependencies.tar.gz` to create `out/Decky.Language.Tutor.Full.zip`.
+
+A manual workflow run with a version matching `package.json` creates a draft GitHub Release with
+the ZIP and its Linux x86-64 dependency archive. Publish the draft before installing its ZIP so
+Decky Loader can access the dependency URL. Without a version, the workflow produces build artifacts.
 
 ## How does it do that? 
 

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Version from package.json (e.g., 0.1.0). Leave empty for a build artifact only.'
+        description: 'Version from package.json (e.g., 0.1.1). Leave empty for a build artifact only.'
         required: false
         type: string
 
@@ -112,14 +112,21 @@ jobs:
             exit 1
           fi
 
-      - name: Package plugin with Linux dependencies
-        run: pnpm package
+      - name: Package plugin ZIP
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.version }}
+        run: |
+          if [[ -n "$RELEASE_TAG" ]]; then
+            export DECKY_DEPENDENCIES_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/plugin-dependencies.tar.gz"
+            export DECKY_DEPENDENCIES_SHA256="$(sha256sum plugin-dependencies.tar.gz | cut -d ' ' -f 1)"
+          fi
+          pnpm package
 
       - name: Upload plugin artifact
         uses: actions/upload-artifact@v4
         with:
           name: decky-language-tutor-plugin
-          path: out/*.zip
+          path: out/Decky.Language.Tutor.zip
 
       - name: Upload dependencies artifact
         uses: actions/upload-artifact@v4

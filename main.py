@@ -111,6 +111,8 @@ def _mask_secret(value):
 
 
 def _mask_for_log(key, value):
+    if key == "yandex_credentials":
+        return "[redacted]"
     return _mask_secret(value) if key in SENSITIVE_SETTING_KEYS else value
 
 
@@ -1136,7 +1138,7 @@ class Plugin:
     _provider_manager: ProviderManager = None
     _use_free_providers: bool = True  # Default to free providers (no API key needed)
     _ocr_provider: str = "chromescreenai"  # "rapidocr" (RapidOCR), "ocrspace" (OCR.space), or "googlecloud" (Google Cloud)
-    _translation_provider: str = "freegoogle"  # "freegoogle" or "googlecloud"
+    _translation_provider: str = "freegoogle"
 
     # Translation cache
     _translation_cache: TranslationCache = None
@@ -1145,6 +1147,8 @@ class Plugin:
     # OCR API configurations - user must provide their own API key
     _google_vision_api_key: str = ""
     _google_translate_api_key: str = ""
+    _yandex_api_key: str = ""
+    _yandex_folder_id: str = ""
     _gemini_api_key: str = ""
     _gemini_model: str = "gemini-2.5-flash"
 
@@ -1246,9 +1250,13 @@ class Plugin:
 
     # Generic settings handlers
     async def get_setting(self, key, default=None):
+        if key == "yandex_credentials":
+            return default
         return self._settings.get_setting(key, default)
 
     async def set_setting(self, key, value):
+        if key == "yandex_credentials":
+            return False
         logger.debug(f"Setting {key} to: {_mask_for_log(key, value)}")
         if key in SENSITIVE_SETTING_KEYS and isinstance(value, str):
             cleaned = _clean_api_key(value)
@@ -1457,6 +1465,29 @@ class Plugin:
             logger.error(traceback.format_exc())
             return False
 
+    async def set_yandex_credentials(self, api_key, folder_id):
+        if not isinstance(api_key, str) or not isinstance(folder_id, str):
+            return False
+        credentials = {
+            "api_key": _clean_api_key(api_key),
+            "folder_id": folder_id.strip(),
+        }
+        if not credentials["api_key"]:
+            credentials["folder_id"] = ""
+        if not self._settings.set_setting("yandex_credentials", credentials):
+            return False
+        self._yandex_api_key = credentials["api_key"]
+        self._yandex_folder_id = credentials["folder_id"]
+        if self._provider_manager:
+            self._provider_manager.set_yandex_credentials(self._yandex_api_key, self._yandex_folder_id)
+        return self._yandex_status()
+
+    def _yandex_status(self):
+        return {
+            "has_yandex_api_key": bool(self._yandex_api_key),
+            "yandex_folder_id": self._yandex_folder_id,
+        }
+
     async def get_all_settings(self):
         try:
             settings = {
@@ -1470,6 +1501,7 @@ class Plugin:
                 "use_free_providers": self._use_free_providers,
                 "ocr_provider": self._ocr_provider,
                 "translation_provider": self._translation_provider,
+                **self._yandex_status(),
                 "google_api_key": self._google_vision_api_key,  # Single key for frontend
                 "google_vision_api_key": self._google_vision_api_key,
                 "google_translate_api_key": self._google_translate_api_key,
@@ -2225,9 +2257,14 @@ class Plugin:
                         )
                 return text_regions
 
-            # Check if CT2 provider has the needed models
-            if self._translation_provider == "ct2":
-                provider = self._provider_manager.get_translation_provider()
+            provider_name = self._translation_provider
+            provider = self._provider_manager.get_translation_provider()
+            if provider_name == "yandex":
+                if not self._yandex_api_key:
+                    raise ApiKeyError("Add a Yandex Cloud API key in Translation settings.")
+                if target_lang == "zh-TW":
+                    return {"error": "model_not_available", "message": "Yandex Cloud Translate does not support Traditional Chinese as a target language."}
+            if provider_name == "ct2":
                 if provider and not provider.is_available(input_lang, target_lang):
                     if input_lang == "auto":
                         return {"error": "model_not_available", "message": "Offline translation requires a specific source language. Select one in plugin settings"}
@@ -2240,7 +2277,7 @@ class Plugin:
             ]
 
             cache_on = self._translation_cache_enabled and self._translation_cache is not None
-            provider_tier = PROVIDER_TIERS.get(self._translation_provider, 0)
+            provider_tier = PROVIDER_TIERS.get(provider_name, 0)
 
             cached = {}
             if cache_on and texts_to_translate:
@@ -2260,7 +2297,7 @@ class Plugin:
 
             start_time = time.time()
             requested = await self._provider_manager.translate_text(
-                to_request, source_lang=input_lang, target_lang=target_lang
+                to_request, source_lang=input_lang, target_lang=target_lang, provider=provider
             ) if to_request else []
             elapsed = time.time() - start_time
             logger.info(f"Translation completed in {elapsed:.2f}s, {len(to_request)} new / {len(cached)} cached")
@@ -2272,7 +2309,7 @@ class Plugin:
             if cache_on and any(normalize(s) != normalize(t) for s, t in translated):
                 await asyncio.to_thread(
                     self._translation_cache.put_many,
-                    translated, input_lang, target_lang, provider_tier, self._translation_provider,
+                    translated, input_lang, target_lang, provider_tier, provider_name,
                 )
 
             # A failed item shows its original text.
@@ -2685,6 +2722,13 @@ class Plugin:
                 self._google_vision_api_key = google_api_key
                 self._google_translate_api_key = google_api_key
 
+            yandex_credentials = self._settings.get_setting("yandex_credentials", {})
+            if isinstance(yandex_credentials, dict):
+                api_key = yandex_credentials.get("api_key")
+                folder_id = yandex_credentials.get("folder_id")
+                self._yandex_api_key = _clean_api_key(api_key) if isinstance(api_key, str) else ""
+                self._yandex_folder_id = folder_id.strip() if isinstance(folder_id, str) else ""
+
             gemini_api_key = load_api_key("gemini_api_key")
             if gemini_api_key:
                 self._gemini_api_key = gemini_api_key
@@ -2749,6 +2793,7 @@ class Plugin:
                 rapidocr_models_dir=screenai_models_dir,
                 ocrspace_data_dir=settingsDir,
             )
+            self._provider_manager.set_yandex_credentials(self._yandex_api_key, self._yandex_folder_id)
 
             # Load and apply RapidOCR-specific settings
             if self._settings.get_setting("custom_recognition_settings", False):

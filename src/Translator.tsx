@@ -32,6 +32,7 @@ export class GameTranslatorLogic {
     // Provider settings for upfront validation
     private ocrProvider: string = "rapidocr";
     private translationProvider: string = "freegoogle";
+    private hasYandexApiKey = false;
     private hasGoogleApiKey: boolean = false;
     private hasGeminiApiKey: boolean = false;
 
@@ -550,6 +551,7 @@ export class GameTranslatorLogic {
             ct2: "On-Device",
             freegoogle: "Google Translate",
             googlecloud: "Google Cloud",
+            yandex: "Yandex Cloud Translate",
         };
         return labels[this.translationProvider] || this.translationProvider;
     }
@@ -568,6 +570,10 @@ export class GameTranslatorLogic {
     setHasGoogleApiKey = (hasKey: boolean): void => {
         this.hasGoogleApiKey = hasKey;
         logger.debug('Translator', `Google API key available: ${hasKey}`);
+    }
+
+    setHasYandexApiKey = (hasKey: boolean): void => {
+        this.hasYandexApiKey = hasKey;
     }
 
     setHasGeminiApiKey = (hasKey: boolean): void => {
@@ -631,7 +637,7 @@ export class GameTranslatorLogic {
         }
 
         const ocrNeedsKey = this.ocrProvider === 'googlecloud';
-        const translationNeedsKey = this.translationProvider === 'googlecloud';
+        const translationNeedsKey = this.ocrProvider !== 'gemini_vision' && this.translationProvider === 'googlecloud';
 
         if ((ocrNeedsKey || translationNeedsKey) && !this.hasGoogleApiKey) {
             if (ocrNeedsKey && translationNeedsKey) {
@@ -641,6 +647,9 @@ export class GameTranslatorLogic {
             } else {
                 return { missing: true, message: "API key required for Translation" };
             }
+        }
+        if (this.ocrProvider !== 'gemini_vision' && this.translationProvider === 'yandex' && !this.hasYandexApiKey) {
+            return { missing: true, message: "API key required for Yandex Cloud Translate" };
         }
         return { missing: false, message: "" };
     }

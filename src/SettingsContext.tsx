@@ -30,7 +30,9 @@ export interface Settings {
     quickToggleEnabled: boolean; // Quick toggle overlay with right button in combo modes
     useFreeProviders: boolean; // Use free providers (OCR.space + free Google Translate) - deprecated, use ocrProvider
     ocrProvider: 'rapidocr' | 'ocrspace' | 'googlecloud' | 'gemini_vision' | 'chromescreenai'; // OCR provider
-    translationProvider: 'freegoogle' | 'googlecloud' | 'ct2'; // Translation provider
+    translationProvider: 'freegoogle' | 'googlecloud' | 'ct2' | 'yandex';
+    hasYandexApiKey: boolean;
+    yandexFolderId: string;
     googleApiKey: string; // Google Cloud Vision API key for text recognition
     geminiApiKey: string; // Gemini API key for Gemini Vision (free tier available)
     geminiModel: string; // Gemini model to use
@@ -76,6 +78,8 @@ const initialSettings: Settings = {
     useFreeProviders: true, // Default to free providers (no API key needed) - deprecated
     ocrProvider: "chromescreenai", // Default to chromescreenai (Chrome Screen AI) provider
     translationProvider: "freegoogle", // Default to free Google Translate
+    hasYandexApiKey: false,
+    yandexFolderId: "",
     googleApiKey: "", // Empty by default, only needed for Google Cloud
     geminiApiKey: "", // Empty by default, needed for Gemini Vision
     geminiModel: "gemini-2.5-flash", // Default Gemini model
@@ -105,10 +109,13 @@ function settingsReducer(state: Settings, action: SettingsAction): Settings {
     }
 }
 
+type EditableSetting = Exclude<keyof Settings, "hasYandexApiKey" | "yandexFolderId">;
+
 // Create the context
 interface SettingsContextType {
     settings: Settings;
-    updateSetting: (key: keyof Settings, value: any, label?: string) => Promise<boolean>;
+    updateSetting: (key: EditableSetting, value: any, label?: string) => Promise<boolean>;
+    saveYandexCredentials: (apiKey: string, folderId: string) => Promise<boolean>;
     initialized: boolean;
 }
 
@@ -156,6 +163,8 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                     useFreeProviders: serverSettings.use_free_providers !== false, // Default to true (deprecated)
                     ocrProvider: serverSettings.ocr_provider || "chromescreenai", // OCR provider setting
                     translationProvider: serverSettings.translation_provider || "freegoogle", // Translation provider setting
+                    hasYandexApiKey: Boolean(serverSettings.has_yandex_api_key),
+                    yandexFolderId: serverSettings.yandex_folder_id || "",
                     googleApiKey: serverSettings.google_api_key || "", // Google API key
                     geminiApiKey: serverSettings.gemini_api_key || "", // Gemini API key
                     geminiModel: serverSettings.gemini_model || "gemini-2.5-flash",
@@ -192,6 +201,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
                 // Set provider settings for upfront API key validation
                 logic.setOcrProvider(serverSettings.ocr_provider || "chromescreenai");
                 logic.setTranslationProvider(serverSettings.translation_provider || "freegoogle");
+                logic.setHasYandexApiKey(Boolean(serverSettings.has_yandex_api_key));
                 logic.setHasGoogleApiKey(!!serverSettings.google_api_key);
                 logic.setHasGeminiApiKey(!!serverSettings.gemini_api_key);
 
@@ -216,13 +226,13 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
     };
 
     // Update a single setting
-    const updateSetting = async (key: keyof Settings, value: any, label?: string): Promise<boolean> => {
+    const updateSetting = async (key: EditableSetting, value: any, label?: string): Promise<boolean> => {
         try {
             // Update local state
             dispatch({ type: 'UPDATE_SETTING', key, value });
 
             // Map frontend setting key to backend setting key
-            const backendKeyMap: Record<keyof Settings, string> = {
+            const backendKeyMap: Record<EditableSetting, string> = {
                 inputLanguage: 'input_language',
                 targetLanguage: 'target_language',
                 inputMode: 'input_mode',
@@ -358,6 +368,25 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         }
     };
 
+    const saveYandexCredentials = async (apiKey: string, folderId: string): Promise<boolean> => {
+        try {
+            const status = await call<[string, string], false | {
+                has_yandex_api_key: boolean;
+                yandex_folder_id: string;
+            }>('set_yandex_credentials', apiKey, folderId);
+            if (status) {
+                dispatch({ type: 'UPDATE_SETTING', key: 'hasYandexApiKey', value: status.has_yandex_api_key });
+                dispatch({ type: 'UPDATE_SETTING', key: 'yandexFolderId', value: status.yandex_folder_id });
+                logic.setHasYandexApiKey(status.has_yandex_api_key);
+                return true;
+            }
+        } catch {
+            // An RPC error may include its arguments.
+        }
+        logic.notify("Failed to save Yandex Cloud credentials", 2000);
+        return false;
+    };
+
     // Initialize settings on mount
     useEffect(() => {
         loadAllSettings();
@@ -367,6 +396,7 @@ export const SettingsProvider: React.FC<SettingsProviderProps> = ({
         <SettingsContext.Provider value={{
             settings,
             updateSetting,
+            saveYandexCredentials,
             initialized: settings.initialized
         }}>
             {children}

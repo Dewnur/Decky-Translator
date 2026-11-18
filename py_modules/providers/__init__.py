@@ -17,6 +17,7 @@ from .base import (
 )
 from .google_ocr import GoogleVisionProvider
 from .google_translate import GoogleTranslateProvider
+from .yandex_translate import YandexTranslateProvider
 from .ocrspace import OCRSpaceProvider
 from .free_translate import FreeTranslateProvider
 from .rapidocr_provider import RapidOCRProvider
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 _REACHABILITY_TTL = 4.0
 
 _WEB_OCR_PROVIDERS = {"gemini_vision", "googlecloud", "ocrspace"}
-_WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle"}
+_WEB_TRANSLATION_PROVIDERS = {"googlecloud", "freegoogle", "yandex"}
 
 # Export all public classes
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     'RateLimitError',
     'GoogleVisionProvider',
     'GoogleTranslateProvider',
+    'YandexTranslateProvider',
     'OCRSpaceProvider',
     'FreeTranslateProvider',
     'RapidOCRProvider',
@@ -71,11 +73,12 @@ class ProviderManager:
         # Configuration
         self._use_free_providers = True  # Default to free providers
         self._google_api_key = ""
+        self._yandex_credentials = ("", "")
         self._gemini_api_key = ""
         self._gemini_model = "gemini-2.5-flash"
         self._gemini_target_language = "en"
         self._ocr_provider_preference = "chromescreenai"  # "rapidocr", "ocrspace", "googlecloud", "gemini_vision", or "chromescreenai"
-        self._translation_provider_preference = "freegoogle"  # "freegoogle", "googlecloud", or "ct2"
+        self._translation_provider_preference = "freegoogle"
         self._rapidocr_confidence = 0.5  # Default RapidOCR confidence threshold (0.0-1.0)
         self._rapidocr_box_thresh = 0.5  # Default RapidOCR box detection threshold (0.0-1.0)
         self._rapidocr_unclip_ratio = 1.6  # Default RapidOCR box expansion ratio (1.0-3.0)
@@ -171,6 +174,10 @@ class ProviderManager:
             f"translation_provider={self._translation_provider_preference}, "
             f"google_api_key_set={bool(google_api_key)}"
         )
+
+    def set_yandex_credentials(self, api_key: str, folder_id: str) -> None:
+        self._yandex_credentials = (api_key, folder_id)
+        self._translation_providers.pop(ProviderType.YANDEX, None)
 
     def set_gemini_target_language(self, target_lang: str) -> None:
         """Update the Gemini Vision provider's target language before each OCR call."""
@@ -399,6 +406,8 @@ class ProviderManager:
             # Use translation provider preference (independent of OCR choice)
             if self._translation_provider_preference == "googlecloud":
                 provider_type = ProviderType.GOOGLE
+            elif self._translation_provider_preference == "yandex":
+                provider_type = ProviderType.YANDEX
             elif self._translation_provider_preference == "ct2":
                 provider_type = ProviderType.CT2
             else:
@@ -411,6 +420,8 @@ class ProviderManager:
                 self._translation_providers[provider_type] = GoogleTranslateProvider(
                     self._google_api_key
                 )
+            elif provider_type == ProviderType.YANDEX:
+                self._translation_providers[provider_type] = YandexTranslateProvider(*self._yandex_credentials)
             elif provider_type == ProviderType.CT2:
                 if self._model_manager:
                     provider = CT2TranslateProvider(
@@ -450,7 +461,8 @@ class ProviderManager:
         self,
         texts: List[str],
         source_lang: str,
-        target_lang: str
+        target_lang: str,
+        provider: Optional[TranslationProvider] = None,
     ) -> List[str]:
         """
         Perform translation with automatic provider selection.
@@ -459,6 +471,7 @@ class ProviderManager:
             texts: List of texts to translate
             source_lang: Source language code
             target_lang: Target language code
+            provider: Translation provider selected before looking up cached entries
 
         Returns:
             List of translated texts
@@ -466,7 +479,8 @@ class ProviderManager:
         if not texts:
             return []
 
-        provider = self.get_translation_provider()
+        if provider is None:
+            provider = self.get_translation_provider()
         if provider and provider.is_available(source_lang, target_lang):
             provider_name = provider.name
             logger.debug(f"Using {provider_name} for translation")
@@ -559,6 +573,8 @@ class ProviderManager:
 
         if trans_pref in _WEB_TRANSLATION_PROVIDERS:
             key = self._google_api_key if trans_pref == "googlecloud" else ""
+            if trans_pref == "yandex":
+                key = "\0".join(self._yandex_credentials)
             result["translation"] = await self._probe_cached(trans_pref, "translation", key)
 
         return result
@@ -588,6 +604,8 @@ class ProviderManager:
                 p = self.get_ocr_provider(ProviderType.OCR_SPACE)
             elif provider == "freegoogle":
                 p = self.get_translation_provider(ProviderType.FREE_GOOGLE)
+            elif provider == "yandex":
+                p = self.get_translation_provider(ProviderType.YANDEX)
             else:
                 return False, f"Unknown provider ({provider})"
 

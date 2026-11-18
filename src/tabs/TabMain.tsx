@@ -348,6 +348,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <span style={{ color: '#888' }}>Translation:</span>
                                         <span style={{ marginLeft: '6px', fontWeight: 'bold' }}>
                                             {settings.translationProvider === 'googlecloud' ? 'Google Cloud' :
+                                             settings.translationProvider === 'yandex' ? 'Yandex Cloud Translate' :
                                              settings.translationProvider === 'ct2' ? 'On-Device' : 'Google Translate'}
                                         </span>
                                     </div>
@@ -371,6 +372,9 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                         <>
                                             <ReachabilityRow result={webReachability?.translation} expectedProvider="googlecloud" />
                                         </>
+                                    )}
+                                    {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'yandex' && (
+                                        <ReachabilityRow result={webReachability?.translation} expectedProvider="yandex" />
                                     )}
                                     {settings.ocrProvider !== 'gemini_vision' && settings.translationProvider === 'ct2' && (
                                         <>

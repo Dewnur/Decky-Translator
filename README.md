@@ -71,9 +71,22 @@ The Translation tab lets you choose separate OCR and translation providers in Tr
 | [**Gemini Vision**](https://ai.google.dev/gemini-api)                                        | Web       | When Gemini is selected as the OCR provider, it returns the translation in the same call — no separate translation provider needed   | Internet + API key          |
 | [**Google Translate**](https://translate.google.com/)                                        | Web       | It's Google. And it translates                                                                                                       | Internet                    |
 | [**Google Cloud Translation**](https://cloud.google.com/translate)                           | Web       | High quality translations                                                                                                            | Internet + API key          |
+| [**Yandex Cloud Translate**](https://aistudio.yandex.ru/en/docs/translate/quickstart)           | Web       | Text translation for the regular overlay and Learn Mode                                                                             | Internet + API key          |
 
 
 **Note:** Google Cloud and Gemini require an API key but offer a generous free tier for personal use.
+
+### Set up Yandex Cloud Translate
+
+1. Follow the [Yandex Translate quickstart](https://aistudio.yandex.ru/en/docs/translate/quickstart) to
+   set up Cloud Billing, grant a service account the `ai.translate.user` role on your folder,
+   and create an API key with the `yc.ai.translate.execute` scope.
+2. In **Translation → Text Translation Method**, select **Yandex Cloud Translate**. Use a separate
+   OCR provider such as Chrome Screen AI.
+3. Choose **Set Yandex API key** and paste the secret from the generated key. You can also enter
+   the folder ID shown in Yandex Cloud.
+4. Set the output language. The plugin sends recognized text to Yandex Cloud for translation,
+   including the words you study in Learn Mode.
 
 <details>
 <summary><h2>How to get Google Cloud API key?</h2></summary>

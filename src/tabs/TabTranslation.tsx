@@ -89,15 +89,27 @@ function formatBytes(bytes: number): string {
 // API Key Modal Component
 const ApiKeyModal: VFC<{
     currentKey: string;
-    onSave: (key: string) => void;
+    onSave: (key: string, folderId: string) => Promise<boolean>;
     closeModal?: () => void;
     title?: string;
     description?: string;
-}> = ({ currentKey, onSave, closeModal, title, description }) => {
+    folderId?: string;
+    canRemove?: boolean;
+}> = ({ currentKey, onSave, closeModal, title, description, folderId, canRemove }) => {
     const [apiKey, setApiKey] = useState(currentKey || "");
+    const [folder, setFolder] = useState(folderId ?? "");
+    const [saving, setSaving] = useState(false);
+    const save = async (key: string) => {
+        setSaving(true);
+        if (await onSave(key, folder)) {
+            closeModal?.();
+        } else {
+            setSaving(false);
+        }
+    };
 
     return (
-        <ModalRoot onCancel={closeModal} onEscKeypress={closeModal}>
+        <ModalRoot onCancel={saving ? undefined : closeModal} onEscKeypress={saving ? undefined : closeModal}>
             <div style={{ padding: "20px", minWidth: "400px" }}>
                 <h2 style={{ marginBottom: "15px" }}>{title || "API Key"}</h2>
                 <p style={{ marginBottom: "15px", color: "#aaa", fontSize: "13px" }}>
@@ -110,17 +122,27 @@ const ApiKeyModal: VFC<{
                     bShowClearAction={true}
                     onChange={(e) => setApiKey(e.target.value)}
                 />
+                {folderId !== undefined && (
+                    <TextField
+                        label="Folder ID (optional)"
+                        value={folder}
+                        onChange={(e) => setFolder(e.target.value)}
+                    />
+                )}
                 <Focusable
                     style={{ display: "flex", gap: "10px", marginTop: "20px", justifyContent: "flex-end" }}
                 >
-                    <DialogButton onClick={closeModal}>
+                    {canRemove && (
+                        <DialogButton disabled={saving} onClick={() => save("")}>
+                            Remove key
+                        </DialogButton>
+                    )}
+                    <DialogButton disabled={saving} onClick={closeModal}>
                         Cancel
                     </DialogButton>
                     <DialogButton
-                        onClick={() => {
-                            onSave(apiKey.trim());
-                            closeModal?.();
-                        }}
+                        disabled={saving || (folderId !== undefined && !apiKey.trim())}
+                        onClick={() => save(apiKey.trim())}
                     >
                         Save
                     </DialogButton>
@@ -134,6 +156,7 @@ const cacheProviderLabel = (p: string) => ({
     ct2: "On-Device",
     freegoogle: "Google Translate",
     googlecloud: "Google Cloud",
+    yandex: "Yandex Cloud Translate",
     gemini_vision: "Gemini Vision",
 } as Record<string, string>)[p] || p || "?";
 
@@ -637,7 +660,7 @@ interface TabTranslationProps {
 }
 
 export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrolled }) => {
-    const { settings, updateSetting } = useSettings();
+    const { settings, updateSetting, saveYandexCredentials } = useSettings();
     const chromescreenaiActionRef = useRef<HTMLDivElement>(null);
     const rapidocrActionRef = useRef<HTMLDivElement>(null);
     const ct2ActionRef = useRef<HTMLDivElement>(null);
@@ -680,6 +703,11 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
     }, [scrollTarget]);
 
     const isCT2 = settings.translationProvider === 'ct2';
+    const isYandex = settings.translationProvider === 'yandex' && settings.ocrProvider !== 'gemini_vision';
+    const yandexUnsupportedOutput = isYandex && settings.targetLanguage === 'zh-TW';
+    const targetOptions = isYandex
+        ? outputLanguageOptions.filter(lang => lang.data !== "zh-TW")
+        : outputLanguageOptions;
     const filteredLanguageOptions = isCT2
         ? languageOptions.filter(lang => lang.data !== "auto")
         : languageOptions;
@@ -726,9 +754,11 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                     <DropdownItem
                         layout="below"
                         label="Output Language"
-                        description="Target language for translation"
-                        rgOptions={[...(settings.targetLanguage === '' ? [selectLanguageOption] : []), ...outputLanguageOptions]}
-                        selectedOption={settings.targetLanguage}
+                        description={yandexUnsupportedOutput
+                            ? "Select an output language supported by Yandex Cloud Translate"
+                            : "Target language for translation"}
+                        rgOptions={[...(settings.targetLanguage === '' || yandexUnsupportedOutput ? [selectLanguageOption] : []), ...targetOptions]}
+                        selectedOption={yandexUnsupportedOutput ? "" : settings.targetLanguage}
                         onChange={(option: any) => updateSetting('targetLanguage', option.data, 'Output language')}
                     />
                 </PanelSectionRow>
@@ -1063,7 +1093,8 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                                     rgOptions={[
                                         { label: <span>On-Device</span>, data: "ct2" },
                                         { label: <span>Google Translate</span>, data: "freegoogle" },
-                                        { label: <span>Google Cloud</span>, data: "googlecloud" }
+                                        { label: <span>Google Cloud</span>, data: "googlecloud" },
+                                        { label: <span>Yandex Cloud Translate</span>, data: "yandex" }
                                     ]}
                                     selectedOption={settings.translationProvider}
                                     onChange={(option) => updateSetting('translationProvider', option.data, 'Translation provider')}
@@ -1104,6 +1135,27 @@ export const TabTranslation: VFC<TabTranslationProps> = ({ scrollTarget, onScrol
                         )}
                     </Field>
                 </PanelSectionRow>
+
+                {isYandex && (
+                    <PanelSectionRow>
+                        <ButtonItem
+                            layout="below"
+                            description="Use a service account API key scoped to yc.ai.translate.execute."
+                            onClick={() => showModal(
+                                <ApiKeyModal
+                                    title="Yandex Cloud Translate"
+                                    description="Enter the secret from your service account API key. Use the folder ID from Yandex Cloud if your setup requires it."
+                                    currentKey=""
+                                    folderId={settings.yandexFolderId}
+                                    canRemove={settings.hasYandexApiKey}
+                                    onSave={saveYandexCredentials}
+                                />,
+                            )}
+                        >
+                            {settings.hasYandexApiKey ? "Manage Yandex API key" : "Set Yandex API key"}
+                        </ButtonItem>
+                    </PanelSectionRow>
+                )}
 
                 <PanelSectionRow>
                     <Field

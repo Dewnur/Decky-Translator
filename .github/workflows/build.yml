@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Version from package.json (e.g., 0.1.2). Leave empty for a build artifact only.'
+        description: 'Version from package.json. Leave empty for a build artifact only.'
         required: false
         type: string
 

@@ -20,8 +20,9 @@ Optional offline OCR and translation models are downloaded in the **Translation*
 2. Enable **Learn English** on the main tab and select **Study This Screen**. English is used for
    this capture. Choose Chrome Screen AI, RapidOCR, OCR.space, or Google Cloud Vision for Learn Mode.
 3. Use **D-pad up/down** to select a text block and **left/right** to select part of the original.
-   **X** switches between words and punctuation-based phrases. **A** requests or hides the translation
-   of the whole selected block. **B** closes the study overlay. The panel also has touch controls.
+   The full translation loads automatically. **X** switches between words and punctuation-based phrases.
+   In Words mode, the selected word is paired with its standalone translation. **B** closes the study
+   overlay. The panel also has touch controls.
 
 Turn off **Learn English** to use the original translation overlay. In **Control**, you can opt in
 to a capture shortcut. Choose a different shortcut if you also use Decky Translator. The study overlay

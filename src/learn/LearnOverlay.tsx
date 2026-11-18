@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "../Input";
 import type { Input } from "../Input";
 import type { TextRegion } from "../TextRecognizer";
 import { segmentText } from "./segmentText";
+import { useStudyTranslation } from "./useStudyTranslation";
 
 export interface LearnControls {
     dismiss: () => void;
@@ -22,23 +23,46 @@ export function LearnOverlay({
     regions, targetLanguage, widthFactor, heightFactor, imageHeight,
     dismiss, subscribeToButtonPresses, translateRegion,
 }: LearnOverlayProps) {
-    const [selection, setSelection] = useState({ region: 0, part: 0, words: false, revealed: false });
-    const [translations, setTranslations] = useState<Record<number, string>>({});
-    const [failure, setFailure] = useState<{ region: number; message: string } | null>(null);
-    const [pendingRegion, setPendingRegion] = useState<number | null>(null);
-    const pending = useRef(false);
-    const mounted = useRef(false);
+    const [selection, setSelection] = useState({ region: 0, part: 0, words: false });
+    const requests = useRef(new Map<string, Promise<string>>());
     const selectedPart = useRef<HTMLButtonElement>(null);
 
     const region = regions[selection.region];
     const segments = useMemo(() => segmentText(region.text, selection.words), [region.text, selection.words]);
     const parts = segments.filter(segment => segment.selectable);
     const targetConfigured = !!targetLanguage && targetLanguage !== 'en';
-    const translation = translations[selection.region];
+    const selectedWord = selection.words ? parts[selection.part]?.text : undefined;
     const panelAtTop = (region.rect.top + region.rect.bottom) * heightFactor / 2 > imageHeight / 2;
 
+    const request = useCallback((text: string) => {
+        const key = JSON.stringify([targetLanguage, text]);
+        const existing = requests.current.get(key);
+        if (existing) return existing;
+
+        const pending = translateRegion({ ...region, text }, targetLanguage)
+            .then(translated => {
+                if (!translated || translated === text.trim()) requests.current.delete(key);
+                return translated;
+            })
+            .catch(error => {
+                requests.current.delete(key);
+                throw error;
+            });
+        requests.current.set(key, pending);
+        return pending;
+    }, [region, targetLanguage, translateRegion]);
+
+    const blockTranslation = useStudyTranslation(targetConfigured ? region.text : null, request, 120);
+    const wordTranslation = useStudyTranslation(
+        blockTranslation.value.status === "ready" ? selectedWord ?? null : null,
+        request,
+        250,
+    );
+    const failedTranslation = blockTranslation.value.status === "error" ? blockTranslation
+        : selectedWord && wordTranslation.value.status === "error" ? wordTranslation : null;
+
     function selectRegion(index: number) {
-        setSelection(previous => ({ ...previous, region: index, part: 0, revealed: false }));
+        setSelection(previous => ({ ...previous, region: index, part: 0 }));
     }
 
     function moveRegion(delta: number) {
@@ -46,7 +70,6 @@ export function LearnOverlay({
             ...previous,
             region: (previous.region + delta + regions.length) % regions.length,
             part: 0,
-            revealed: false,
         }));
     }
 
@@ -59,36 +82,12 @@ export function LearnOverlay({
         setSelection(previous => ({ ...previous, words: !previous.words, part: 0 }));
     }
 
-    async function toggleTranslation() {
-        const index = selection.region;
-        if (!targetConfigured) return;
-        if (selection.revealed && failure?.region !== index) {
-            setSelection(previous => ({ ...previous, revealed: false }));
-            return;
-        }
-        if (translation !== undefined) {
-            setSelection(previous => ({ ...previous, revealed: true }));
-            return;
-        }
-        if (pending.current) {
-            if (pendingRegion === index) setSelection(previous => ({ ...previous, revealed: true }));
-            return;
-        }
-
-        pending.current = true;
-        setPendingRegion(index);
-        setFailure(null);
-        setSelection(previous => ({ ...previous, revealed: true }));
-        try {
-            const result = await translateRegion(region, targetLanguage);
-            if (mounted.current) setTranslations(previous => ({ ...previous, [index]: result }));
-        } catch (error) {
-            if (mounted.current) {
-                setFailure({ region: index, message: error instanceof Error ? error.message : "Translation failed." });
-            }
-        } finally {
-            pending.current = false;
-            if (mounted.current) setPendingRegion(null);
+    function translationText(value: typeof blockTranslation.value, source: string): string {
+        switch (value.status) {
+            case "loading": return "Translating…";
+            case "error": return value.message;
+            case "ready": return value.text && value.text !== source.trim()
+                ? value.text : "No distinct translation returned.";
         }
     }
 
@@ -99,20 +98,13 @@ export function LearnOverlay({
             case Button.DPAD_DOWN: moveRegion(1); break;
             case Button.DPAD_LEFT: movePart(-1); break;
             case Button.DPAD_RIGHT: movePart(1); break;
-            case Button.A: void toggleTranslation(); break;
+            case Button.A: failedTranslation?.retry(); break;
             case Button.B: dismiss(); break;
             case Button.X: toggleWords(); break;
         }
     };
 
-    useEffect(() => {
-        mounted.current = true;
-        const unsubscribe = subscribeToButtonPresses(button => handleButton.current(button));
-        return () => {
-            mounted.current = false;
-            unsubscribe();
-        };
-    }, [subscribeToButtonPresses]);
+    useEffect(() => subscribeToButtonPresses(button => handleButton.current(button)), [subscribeToButtonPresses]);
 
     useEffect(() => {
         selectedPart.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
@@ -122,6 +114,7 @@ export function LearnOverlay({
     return (
         <>
             <style>{`
+                .dlt-study { --dlt-selection: #9ed1ff; --dlt-selection-fill: #24486d; }
                 .dlt-study button { font: inherit; color: inherit; cursor: pointer; }
                 .dlt-study button:focus-visible, .dlt-study-region:focus-visible {
                     outline: 2px solid white;
@@ -131,9 +124,25 @@ export function LearnOverlay({
                 .dlt-study-actions button {
                     background: #243247; border: 1px solid #62748c; border-radius: 4px; padding: 5px 8px;
                 }
-                .dlt-study-actions button:disabled { cursor: default; opacity: 0.65; }
-                .dlt-study-text button { background: transparent; padding: 0 2px; border: 1px solid transparent; }
-                .dlt-study-text button[aria-pressed="true"] { background: #24486d; border-color: #9ed1ff; }
+                .dlt-study-text { max-height: 13vh; overflow-y: auto; white-space: pre-wrap; line-height: 1.55; }
+                .dlt-study-text button {
+                    background: transparent; padding: 0 2px; border: 1px solid transparent; border-radius: 4px;
+                }
+                .dlt-study-text[data-words="true"] button { border-bottom-color: #62748c; }
+                .dlt-study-text[data-words] button[aria-pressed="true"] {
+                    color: var(--dlt-selection); background: var(--dlt-selection-fill);
+                    border-color: var(--dlt-selection);
+                }
+                .dlt-study-caption { color: #bdcddd; font-size: 0.75em; }
+                .dlt-study-word { margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--dlt-selection); }
+                .dlt-study-word-pair {
+                    display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; color: var(--dlt-selection);
+                }
+                .dlt-study-word-pair strong { background: var(--dlt-selection-fill); padding: 0 4px; border-radius: 4px; }
+                .dlt-study-translation {
+                    margin-top: 8px; padding-top: 6px; border-top: 1px solid #354559;
+                }
+                .dlt-study-translation-text { max-height: 14vh; overflow-y: auto; white-space: pre-wrap; }
             `}</style>
             {regions.map(({ rect }, index) => (
                 <button
@@ -170,15 +179,11 @@ export function LearnOverlay({
                     <button type="button" aria-pressed={selection.words} onClick={toggleWords}>
                         {selection.words ? "Words" : "Phrases"}
                     </button>
-                    <button type="button" disabled={!targetConfigured || (pendingRegion !== null && pendingRegion !== selection.region && translation === undefined)}
-                        onClick={() => void toggleTranslation()}>
-                        {selection.revealed && failure?.region === selection.region ? "Retry translation"
-                            : selection.revealed ? "Hide translation" : "Show translation"}
-                    </button>
+                    {failedTranslation && <button type="button" onClick={failedTranslation.retry}>Retry translation</button>}
                     <button type="button" onClick={dismiss}>Close</button>
                 </div>
-                <div style={{ maxHeight: "26vh", overflowY: "auto", marginTop: 8, overflowWrap: "anywhere" }}>
-                    <div lang="en" className="dlt-study-text" style={{ whiteSpace: "pre-wrap", lineHeight: 1.45 }}>
+                <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>
+                    <div lang="en" className="dlt-study-text" data-words={selection.words}>
                         {segments.map(segment => {
                             if (!segment.selectable) return <span key={segment.start}>{segment.text}</span>;
                             const index = partIndex++;
@@ -192,18 +197,26 @@ export function LearnOverlay({
                             );
                         })}
                     </div>
-                    {selection.revealed && (
-                        <div aria-live="polite" style={{ marginTop: 6, whiteSpace: "pre-wrap", color: "#b6d9ff" }}>
-                            {pendingRegion === selection.region ? "Translating…"
-                                : failure?.region === selection.region ? failure.message
-                                : translation && translation !== region.text.trim() ? translation
-                                : "The provider returned no different translation."}
+                    {selectedWord && targetConfigured && blockTranslation.value.status !== "error" && (
+                        <div className="dlt-study-word">
+                            <div className="dlt-study-caption">Word on its own</div>
+                            <div className="dlt-study-word-pair" aria-live="polite">
+                                <strong lang="en">{selectedWord}</strong>
+                                <span aria-hidden="true">→</span>
+                                <span lang={targetLanguage} dir="auto">{translationText(wordTranslation.value, selectedWord)}</span>
+                            </div>
                         </div>
                     )}
+                    <div className="dlt-study-translation">
+                        <div className="dlt-study-caption">Translation</div>
+                        <div aria-live="polite" className="dlt-study-translation-text" lang={targetConfigured ? targetLanguage : undefined} dir="auto">
+                            {targetConfigured ? translationText(blockTranslation.value, region.text)
+                                : "Choose a translation language other than English in the Translation tab."}
+                        </div>
+                    </div>
                 </div>
                 <div style={{ marginTop: 6, fontSize: "0.78em", color: "#bdcddd" }}>
-                    {!targetConfigured && <div>Choose a translation language other than English in the Translation tab.</div>}
-                    <div>↑↓ Blocks · ←→ Text · X Words/Phrases · A Translation · B Close</div>
+                    <div>↑↓ Blocks · ←→ Text · X Words/Phrases{failedTranslation ? " · A Retry" : ""} · B Close</div>
                 </div>
             </section>
         </>

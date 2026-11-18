@@ -3,6 +3,7 @@ import { Button } from "../Input";
 import type { Input } from "../Input";
 import type { TextRegion } from "../TextRecognizer";
 import { segmentText } from "./segmentText";
+import { findInitialStudyRegion } from "./subtitlePriority";
 import { useStudyTranslation } from "./useStudyTranslation";
 
 export interface LearnControls {
@@ -17,13 +18,19 @@ interface LearnOverlayProps extends LearnControls {
     widthFactor: number;
     heightFactor: number;
     imageHeight: number;
+    captureWidth: number;
+    captureHeight: number;
 }
 
 export function LearnOverlay({
-    regions, targetLanguage, widthFactor, heightFactor, imageHeight,
+    regions, targetLanguage, widthFactor, heightFactor, imageHeight, captureWidth, captureHeight,
     dismiss, subscribeToButtonPresses, translateRegion,
 }: LearnOverlayProps) {
-    const [selection, setSelection] = useState({ region: 0, part: 0, words: false });
+    const [selection, setSelection] = useState(() => ({
+        region: findInitialStudyRegion(regions, captureWidth, captureHeight),
+        part: 0,
+        words: false,
+    }));
     const requests = useRef(new Map<string, Promise<string>>());
     const selectedPart = useRef<HTMLButtonElement>(null);
 

@@ -406,6 +406,7 @@ export const TranslatedTextOverlay: VFC<{
 
     // State to track the natural (original) image dimensions from the screenshot
     const [naturalDimensions, setNaturalDimensions] = useState({ width: 1280, height: 800 });
+    const [loadedImageData, setLoadedImageData] = useState("");
 
     // Load font as a side-effect (network request / DOM injection)
     useEffect(() => {
@@ -425,6 +426,10 @@ export const TranslatedTextOverlay: VFC<{
     const formattedImageData = imageData && imageData.startsWith('data:')
         ? imageData
         : imageData ? `data:image/png;base64,${imageData}` : "";
+
+    useEffect(() => {
+        if (!imageData) setLoadedImageData("");
+    }, [imageData]);
 
     // Update image dimensions when the image loads or window resizes
     const updateImageDimensions = useCallback(() => {
@@ -529,7 +534,10 @@ export const TranslatedTextOverlay: VFC<{
                     <img
                         ref={imgRef}
                         src={formattedImageData}
-                        onLoad={updateImageDimensions}
+                        onLoad={() => {
+                            updateImageDimensions();
+                            setLoadedImageData(imageData);
+                        }}
                         style={{
                             maxHeight: "calc(100vh - 2px)",
                             maxWidth: "calc(100vw - 2px)",
@@ -541,12 +549,13 @@ export const TranslatedTextOverlay: VFC<{
                         alt="Screenshot"
                     />
 
-                    {visible && learnView && regions.length > 0 && (() => {
+                    {visible && learnView && imageData === loadedImageData && regions.length > 0 && (() => {
                         const { widthFactor, heightFactor } = getScalingFactor();
                         return <LearnOverlay {...learnControls} regions={regions}
                             targetLanguage={learnView.targetLanguage}
                             widthFactor={widthFactor} heightFactor={heightFactor}
-                            imageHeight={imageDimensions.height} />;
+                            imageHeight={imageDimensions.height}
+                            captureWidth={naturalDimensions.width} captureHeight={naturalDimensions.height} />;
                     })()}
 
                     {/* Overlay translated text boxes with adaptive font sizing */}

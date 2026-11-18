@@ -19,7 +19,9 @@ Optional offline OCR and translation models are downloaded in the **Translation*
    For offline use, download a local OCR model and the NLLB translation model.
 2. Enable **Learn English** on the main tab and select **Study This Screen**. English is used for
    this capture. Choose Chrome Screen AI, RapidOCR, OCR.space, or Google Cloud Vision for Learn Mode.
-3. Use **D-pad up/down** to select a text block and **left/right** to select part of the original.
+3. Learn Mode starts with a likely subtitle in the lower part of the screenshot, or the first
+   recognized block if there is no text in that area. Use **D-pad up/down** to select another
+   block and **left/right** to select part of the original.
    The full translation loads automatically. **X** switches between words and punctuation-based phrases.
    In Words mode, the selected word is paired with its standalone translation. **B** closes the study
    overlay. The panel also has touch controls.

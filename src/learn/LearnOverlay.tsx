@@ -7,6 +7,7 @@ import { findInitialStudyRegion } from "./subtitlePriority";
 import { useStudyTranslation } from "./useStudyTranslation";
 import { translateStudyTexts } from "./studyTranslationCache";
 import { StudyWordPopover } from "./StudyWordPopover";
+import { findVerticalStudyPart } from "./studyNavigation";
 import type { LearnWordLayout } from "./wordLayout";
 
 export interface LearnControls {
@@ -36,6 +37,7 @@ export function LearnOverlay({
         words: true,
     }));
     const requests = useRef(new Map<string, Promise<string>>());
+    const studyText = useRef<HTMLDivElement>(null);
     const selectedPart = useRef<HTMLButtonElement>(null);
 
     const region = regions[selection.region];
@@ -89,6 +91,7 @@ export function LearnOverlay({
     }
 
     function moveRegion(delta: number) {
+        if (regions.length < 2) return;
         setSelection(previous => ({
             ...previous,
             region: (previous.region + delta + regions.length) % regions.length,
@@ -96,9 +99,17 @@ export function LearnOverlay({
         }));
     }
 
-    function movePart(delta: number) {
+    function movePart(delta: -1 | 1, vertical = false) {
         if (!parts.length) return;
-        setSelection(previous => ({ ...previous, part: (previous.part + delta + parts.length) % parts.length }));
+        const positions = vertical
+            ? Array.from(studyText.current?.querySelectorAll("button") ?? [], button => button.getBoundingClientRect())
+            : [];
+        setSelection(previous => {
+            const part = vertical
+                ? findVerticalStudyPart(positions, previous.part, delta)
+                : Math.max(0, Math.min(previous.part + delta, parts.length - 1));
+            return part === previous.part ? previous : { ...previous, part };
+        });
     }
 
     function toggleWords() {
@@ -126,8 +137,10 @@ export function LearnOverlay({
     const handleButton = useRef<(button: Button) => void>(() => {});
     handleButton.current = button => {
         switch (button) {
-            case Button.DPAD_UP: moveRegion(-1); break;
-            case Button.DPAD_DOWN: moveRegion(1); break;
+            case Button.L1: moveRegion(-1); break;
+            case Button.R1: moveRegion(1); break;
+            case Button.DPAD_UP: movePart(-1, true); break;
+            case Button.DPAD_DOWN: movePart(1, true); break;
             case Button.DPAD_LEFT: movePart(-1); break;
             case Button.DPAD_RIGHT: movePart(1); break;
             case Button.A: failedTranslation?.retry(); break;
@@ -159,6 +172,7 @@ export function LearnOverlay({
                 .dlt-study-text { max-height: 13vh; overflow-y: auto; white-space: pre-wrap; line-height: 1.55; }
                 .dlt-study-text button {
                     background: transparent; padding: 0 2px; border: 1px solid transparent; border-radius: 4px;
+                    vertical-align: top;
                 }
                 .dlt-study-text[data-layout] button { border-bottom-color: #62748c; }
                 .dlt-study-text button[aria-pressed="true"] {
@@ -229,9 +243,9 @@ export function LearnOverlay({
                 }}
             >
                 <div className="dlt-study-actions">
-                    <button type="button" onClick={() => moveRegion(-1)} aria-label="Previous block">↑</button>
+                    <button type="button" disabled={regions.length < 2} onClick={() => moveRegion(-1)} aria-label="Previous block">L1</button>
                     <span>{selection.region + 1} / {regions.length}</span>
-                    <button type="button" onClick={() => moveRegion(1)} aria-label="Next block">↓</button>
+                    <button type="button" disabled={regions.length < 2} onClick={() => moveRegion(1)} aria-label="Next block">R1</button>
                     <button type="button" aria-pressed={selection.words} onClick={toggleWords}>
                         {selection.words ? "Words" : "Phrases"}
                     </button>
@@ -241,7 +255,7 @@ export function LearnOverlay({
                 <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>
                     <div className="dlt-study-original" data-popover={showPopover}>
                         {showGlosses && <div className="dlt-study-caption">Words on their own</div>}
-                        <div lang="en" className="dlt-study-text" data-layout={activeLayout} data-glosses={showGlosses}>
+                        <div ref={studyText} lang="en" className="dlt-study-text" data-layout={activeLayout} data-glosses={showGlosses}>
                             {segments.map(segment => {
                                 if (!segment.selectable) return <span key={segment.start}>{segment.text}</span>;
                                 const index = partIndex++;
@@ -283,7 +297,7 @@ export function LearnOverlay({
                     </div>
                 </div>
                 <div style={{ marginTop: 6, fontSize: "0.78em", color: "#bdcddd" }}>
-                    <div>↑↓ Blocks · ←→ Text · X Words/Phrases{failedTranslation ? " · A Retry" : ""} · B Close</div>
+                    <div>L1/R1 Blocks · D-pad / Left stick Move · X Words/Phrases{failedTranslation ? " · A Retry" : ""} · B Close</div>
                 </div>
             </section>
         </>

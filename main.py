@@ -230,6 +230,8 @@ class HidrawButtonMonitor:
     STEAMDECK_PID = 0x1205
     # InputPlumber virtual controller (used on non-Steam Deck handhelds like Legion Go)
     INPUTPLUMBER_PID = 0x12FB
+    DECK_STATE_REPORT = 0x09
+    LEFT_STICK_OFFSET = 48
     PACKET_SIZE = 64
     POLL_INTERVAL = 0.004  # 250Hz - matches controller report rate
 
@@ -273,6 +275,7 @@ class HidrawButtonMonitor:
         self.thread = None
         self.event_queue = queue.Queue(maxsize=100)
         self.current_buttons = set()
+        self.left_stick = (0, 0)
         self.last_buttons_l = 0
         self.last_buttons_h = 0
         self.error_count = 0
@@ -433,6 +436,7 @@ class HidrawButtonMonitor:
             self.device_fd = None
 
         self.initialized = False
+        self.left_stick = (0, 0)
         logger.info("HidrawButtonMonitor stopped")
 
     def _monitor_loop(self):
@@ -488,9 +492,15 @@ class HidrawButtonMonitor:
         self.initialized = False
         self.device_path = None
         self.device_pid = None
+        self.left_stick = (0, 0)
 
     def _process_packet(self, data):
         """Parse HID packet and generate button events."""
+        if (self.device_pid == self.STEAMDECK_PID and data[2] == self.DECK_STATE_REPORT
+                and len(data) >= self.LEFT_STICK_OFFSET + 4):
+            # The Deck report stores signed little-endian X and Y with positive Y pointing up.
+            self.left_stick = struct.unpack_from("<hh", data, self.LEFT_STICK_OFFSET)
+
         # Parse button states from packet
         buttons_l = struct.unpack('<I', data[8:12])[0]
         buttons_h = struct.unpack('<I', data[12:16])[0]
@@ -2475,18 +2485,19 @@ class Plugin:
             return {"success": False, "events": [], "error": str(e)}
 
     async def get_hidraw_button_state(self):
-        """Get the current complete button state from both monitors.
+        """Get the current button state and the built-in Deck's left stick position.
 
-        Merges button state from hidraw (built-in controller) and evdev
-        (external gamepads) via set union.
+        Button state is merged across all running monitors.
         """
         try:
             buttons = set()
+            left_stick = (0, 0)
             any_running = False
 
             if self._hidraw_monitor and self._hidraw_monitor.running:
                 any_running = True
                 buttons.update(self._hidraw_monitor.get_button_state())
+                left_stick = self._hidraw_monitor.left_stick
 
             if self._evdev_monitor and self._evdev_monitor.running:
                 any_running = True
@@ -2497,7 +2508,7 @@ class Plugin:
                 buttons.update(self._triton_monitor.get_button_state())
 
             if any_running:
-                return {"success": True, "buttons": list(buttons)}
+                return {"success": True, "buttons": list(buttons), "left_stick": left_stick}
             return {"success": False, "buttons": [], "error": "Monitor not running"}
         except Exception as e:
             logger.error(f"Error getting hidraw button state: {e}")

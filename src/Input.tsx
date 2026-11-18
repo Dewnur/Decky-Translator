@@ -89,6 +89,35 @@ const HIDRAW_BUTTON_MAP: Record<string, Button> = {
     'RIGHT_PAD_CLICK': Button.RIGHT_TOUCHPAD_CLICK,
 };
 
+const DIRECTION_BUTTONS = [Button.DPAD_UP, Button.DPAD_DOWN, Button.DPAD_LEFT, Button.DPAD_RIGHT] as const;
+type DirectionButton = typeof DIRECTION_BUTTONS[number];
+type StickPosition = [x: number, y: number];
+
+function isDirectionButton(button: Button): button is DirectionButton {
+    return DIRECTION_BUTTONS.some(direction => direction === button);
+}
+
+function stickToDirection([x, y]: StickPosition, previous: DirectionButton | undefined): DirectionButton | undefined {
+    const strength = {
+        [Button.DPAD_UP]: y,
+        [Button.DPAD_DOWN]: -y,
+        [Button.DPAD_LEFT]: -x,
+        [Button.DPAD_RIGHT]: x,
+    };
+    const direction = Math.abs(x) >= Math.abs(y)
+        ? (x < 0 ? Button.DPAD_LEFT : Button.DPAD_RIGHT)
+        : (y < 0 ? Button.DPAD_DOWN : Button.DPAD_UP);
+    // A lower release threshold and a margin between axes prevent drift and diagonal jitter.
+    const pressThreshold = 16_384;
+    const releaseThreshold = 11_468;
+    const switchMargin = 3_000;
+    if (previous !== undefined && strength[previous] >= releaseThreshold &&
+        (strength[direction] < pressThreshold || strength[direction] < strength[previous] + switchMargin)) {
+        return previous;
+    }
+    return strength[direction] >= pressThreshold ? direction : undefined;
+}
+
 export class Input {
     private onButtonsPressedListeners: Array<(actionType: ActionType) => void> = [];
     private buttonListeners = new Set<(button: Button) => void>();
@@ -96,10 +125,12 @@ export class Input {
     private touchStartTime: number | null = null;
 
     private pollingInterval: ReturnType<typeof setInterval> | null = null;
-    private pollingRate = 100; // 10Hz polling
     private pollInProgress = false;
     private shortcutEnabled = false;
     private hasButtonSample = false;
+    private stickDirection?: DirectionButton;
+    private studyDirection?: DirectionButton;
+    private nextDirectionRepeat: number | null = null;
 
     // Health tracking
     private lastInputTime: number = 0;
@@ -146,14 +177,11 @@ export class Input {
 
     // Start polling the backend for hidraw button state
     private startHidrawPolling(): void {
-        logger.info('Input', 'Starting hidraw button state polling');
-
+        if (this.pollingInterval !== null) clearInterval(this.pollingInterval);
+        const pollingRate = this.buttonListeners.size > 0 ? 50 : 100;
         this.pollingInterval = setInterval(async () => {
             await this.pollButtonState();
-        }, this.pollingRate);
-
-        this.inputHealthy = true;
-        logger.info('Input', 'Hidraw polling started');
+        }, pollingRate);
     }
 
     // Poll the backend for complete button state (not individual events)
@@ -163,10 +191,12 @@ export class Input {
 
         this.pollInProgress = true;
         try {
-            const result = await call<[], { success: boolean; buttons: string[] }>('get_hidraw_button_state');
+            const result = await call<[], { success: boolean; buttons: string[]; left_stick?: StickPosition }>(
+                'get_hidraw_button_state',
+            );
 
             if (this.shouldPoll() && result?.success && result.buttons) {
-                this.handleButtonState(result.buttons);
+                this.handleButtonState(result.buttons, result.left_stick ?? [0, 0]);
             }
         } catch (error) {
             // Silently handle polling errors to avoid log spam
@@ -182,7 +212,7 @@ export class Input {
     }
 
     // Handle the complete button state from backend
-    private handleButtonState(buttonNames: string[]): void {
+    private handleButtonState(buttonNames: string[], stick: StickPosition): void {
         this.lastInputTime = Date.now();
         this.inputHealthy = true;
 
@@ -198,6 +228,7 @@ export class Input {
         if (!this.hasButtonSample) {
             this.hasButtonSample = true;
             this.currentlyPressedButtons = newPressedButtons;
+            this.processStudyDirection(newPressedButtons, stick);
             return;
         }
 
@@ -219,8 +250,35 @@ export class Input {
             // Process the new state
             if (this.shortcutEnabled) this.processButtonState();
             for (const button of presses) {
-                this.buttonListeners.forEach(listener => listener(button));
+                if (!isDirectionButton(button)) {
+                    this.buttonListeners.forEach(listener => listener(button));
+                }
             }
+        }
+
+        this.processStudyDirection(newPressedButtons, stick);
+    }
+
+    private processStudyDirection(buttons: Set<Button>, stick: StickPosition): void {
+        if (this.buttonListeners.size === 0) return;
+        this.stickDirection = stickToDirection(stick, this.stickDirection);
+        const previous = this.studyDirection;
+        const dpadDirection = previous !== undefined && buttons.has(previous)
+            ? previous
+            : DIRECTION_BUTTONS.find(button => buttons.has(button));
+        const direction = dpadDirection ?? this.stickDirection;
+        this.studyDirection = direction;
+
+        // Opening the overlay while a direction is already held keeps the initial selection.
+        if (this.nextDirectionRepeat === null || direction === undefined) {
+            this.nextDirectionRepeat = Infinity;
+            return;
+        }
+        const now = performance.now();
+        const changed = direction !== previous;
+        if (changed || now >= this.nextDirectionRepeat) {
+            this.nextDirectionRepeat = now + (changed ? 350 : 140);
+            this.buttonListeners.forEach(listener => listener(direction));
         }
     }
 
@@ -333,6 +391,9 @@ export class Input {
             this.currentlyPressedButtons.clear();
             this.previousButtons = [];
             this.hasButtonSample = false;
+            this.stickDirection = undefined;
+            this.studyDirection = undefined;
+            this.nextDirectionRepeat = null;
         }
     }
 
@@ -394,11 +455,20 @@ export class Input {
     }
 
     subscribeToButtonPresses = (listener: (button: Button) => void): (() => void) => {
-        if (!this.shortcutEnabled && this.buttonListeners.size === 0) {
-            this.hasButtonSample = false;
-        }
+        const firstListener = this.buttonListeners.size === 0;
         this.buttonListeners.add(listener);
-        return () => { this.buttonListeners.delete(listener); };
+        if (firstListener) {
+            if (!this.shortcutEnabled) this.hasButtonSample = false;
+            this.stickDirection = undefined;
+            this.studyDirection = undefined;
+            this.nextDirectionRepeat = null;
+            if (this.pollingInterval !== null) this.startHidrawPolling();
+        }
+        return () => {
+            if (this.buttonListeners.delete(listener) && this.buttonListeners.size === 0 && this.pollingInterval !== null) {
+                this.startHidrawPolling();
+            }
+        };
     };
 
     setInputMode(mode: InputMode): void {

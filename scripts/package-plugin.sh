@@ -2,14 +2,15 @@
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
+version="$(node -p "require('./package.json').version")"
 mode="${1:---thin}"
 case "$mode" in
     --thin)
-        artifact="${2:-$(pwd)/out/Decky.Language.Tutor.zip}"
+        artifact="${2:-$(pwd)/out/Decky.Language.Tutor-v$version.zip}"
         ;;
     --full)
         dependencies="${2:-plugin-dependencies.tar.gz}"
-        artifact="${3:-$(pwd)/out/Decky.Language.Tutor.Full.zip}"
+        artifact="${3:-$(pwd)/out/Decky.Language.Tutor.Full-v$version.zip}"
         test -f "$dependencies" || { echo "Missing $dependencies. Build the Linux dependency archive first." >&2; exit 1; }
         ;;
     *)

@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Version from package.json (e.g., 0.1.1). Leave empty for a build artifact only.'
+        description: 'Version from package.json (e.g., 0.1.2). Leave empty for a build artifact only.'
         required: false
         type: string
 
@@ -18,8 +18,9 @@ jobs:
     permissions:
       contents: read
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      is_release: ${{ steps.version.outputs.is_release }}
+      release_tag: ${{ steps.names.outputs.release_tag }}
+      zip_name: ${{ steps.names.outputs.zip_name }}
+      dependencies_name: ${{ steps.names.outputs.dependencies_name }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,6 +29,25 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Set archive names
+        id: names
+        env:
+          REQUESTED_VERSION: ${{ inputs.release_version }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          RELEASE_TAG=""
+          if [[ -n "$REQUESTED_VERSION" ]]; then
+            if [[ "$REQUESTED_VERSION" != "$VERSION" ]]; then
+              echo "Release version must match package.json ($VERSION)" >&2
+              exit 1
+            fi
+            RELEASE_TAG="v$VERSION"
+          fi
+          INDEX="v$VERSION-build.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT"
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "zip_name=Decky.Language.Tutor-$INDEX.zip" >> "$GITHUB_OUTPUT"
+          echo "dependencies_name=plugin-dependencies-$INDEX.tar.gz" >> "$GITHUB_OUTPUT"
 
       - name: Install pnpm
         run: npm install -g pnpm@9
@@ -41,22 +61,27 @@ jobs:
           pnpm build
 
       - name: Setup Python 3.13
+        if: steps.names.outputs.release_tag != ''
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
       - name: Create dependencies directory
+        if: steps.names.outputs.release_tag != ''
         run: mkdir -p dependencies_build
 
       - name: Install Python packages (Python 3.13)
+        if: steps.names.outputs.release_tag != ''
         run: |
           pip install -r requirements.txt -t dependencies_build/py_modules --no-cache-dir
 
       - name: Install cp311 packages for Decky Loader runtime
+        if: steps.names.outputs.release_tag != ''
         run: |
           pip install evdev-binary -t dependencies_build/py_modules --no-cache-dir --python-version 3.11 --only-binary=:all: --platform manylinux_2_28_x86_64 --no-deps
 
       - name: Strip unnecessary packages and test files
+        if: steps.names.outputs.release_tag != ''
         run: |
           cd dependencies_build/py_modules
           # Remove packages not needed at runtime (onnxruntime optional deps)
@@ -84,6 +109,7 @@ jobs:
           echo "py_modules size after cleanup: $(du -sh . | cut -f1)"
 
       - name: Download Python 3.13 portable runtime
+        if: steps.names.outputs.release_tag != ''
         run: |
           mkdir -p dependencies_build/python313
           curl -L -o dependencies_build/python313/python-3.13.tar.gz \
@@ -92,74 +118,81 @@ jobs:
           cd dependencies_build/python313 && tar -xzf python-3.13.tar.gz && rm python-3.13.tar.gz
 
       - name: Create dependencies archive
+        if: steps.names.outputs.release_tag != ''
+        env:
+          DEPENDENCIES_NAME: ${{ steps.names.outputs.dependencies_name }}
         run: |
           cd dependencies_build
-          tar -czvf ../plugin-dependencies.tar.gz py_modules python313
-
-      - name: Get release version
-        id: version
-        env:
-          REQUESTED_VERSION: ${{ inputs.release_version }}
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if [[ -z "$REQUESTED_VERSION" ]]; then
-            echo "is_release=false" >> "$GITHUB_OUTPUT"
-          elif [[ "$REQUESTED_VERSION" == "$VERSION" ]]; then
-            echo "is_release=true" >> "$GITHUB_OUTPUT"
-            echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
-          else
-            echo "Release version must match package.json ($VERSION)" >&2
-            exit 1
-          fi
+          tar -czf "../$DEPENDENCIES_NAME" py_modules python313
 
       - name: Package plugin ZIP
         env:
-          RELEASE_TAG: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.names.outputs.release_tag }}
+          ZIP_NAME: ${{ steps.names.outputs.zip_name }}
+          DEPENDENCIES_NAME: ${{ steps.names.outputs.dependencies_name }}
         run: |
           if [[ -n "$RELEASE_TAG" ]]; then
-            export DECKY_DEPENDENCIES_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/plugin-dependencies.tar.gz"
-            export DECKY_DEPENDENCIES_SHA256="$(sha256sum plugin-dependencies.tar.gz | cut -d ' ' -f 1)"
+            export DECKY_DEPENDENCIES_URL="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/$RELEASE_TAG/$DEPENDENCIES_NAME"
+            export DECKY_DEPENDENCIES_SHA256="$(sha256sum "$DEPENDENCIES_NAME" | cut -d ' ' -f 1)"
           fi
-          pnpm package
+          pnpm package "out/$ZIP_NAME"
 
       - name: Upload plugin artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: decky-language-tutor-plugin
-          path: out/Decky.Language.Tutor.zip
+          path: out/${{ steps.names.outputs.zip_name }}
+          archive: false
+          if-no-files-found: error
+
+      - name: Download installer for verification
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ steps.names.outputs.zip_name }}
+          path: ${{ runner.temp }}/decky-artifact-check
+          skip-decompress: true
+
+      - name: Verify the download is the original ZIP
+        env:
+          ZIP_NAME: ${{ steps.names.outputs.zip_name }}
+        run: cmp "out/$ZIP_NAME" "$RUNNER_TEMP/decky-artifact-check/$ZIP_NAME"
 
       - name: Upload dependencies artifact
-        uses: actions/upload-artifact@v4
+        if: steps.names.outputs.release_tag != ''
+        uses: actions/upload-artifact@v7
         with:
-          name: plugin-dependencies
-          path: plugin-dependencies.tar.gz
+          path: ${{ steps.names.outputs.dependencies_name }}
+          archive: false
+          if-no-files-found: error
 
   release:
-    if: needs.build.outputs.is_release == 'true'
+    if: needs.build.outputs.release_tag != ''
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - name: Download plugin artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
-          name: decky-language-tutor-plugin
+          name: ${{ needs.build.outputs.zip_name }}
           path: ./
+          skip-decompress: true
 
       - name: Download dependencies artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
-          name: plugin-dependencies
+          name: ${{ needs.build.outputs.dependencies_name }}
           path: ./
+          skip-decompress: true
 
       - name: Publish to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.build.outputs.version }}
+          tag_name: ${{ needs.build.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
           files: |
-            Decky.Language.Tutor.zip
-            plugin-dependencies.tar.gz
+            ${{ needs.build.outputs.zip_name }}
+            ${{ needs.build.outputs.dependencies_name }}
+          fail_on_unmatched_files: true
           draft: true
           generate_release_notes: true

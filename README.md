@@ -7,7 +7,8 @@ The fork uses its own plugin name, installation directory, settings, models and 
 ## Install on Steam Deck
 
 Install Decky Loader, then open **Decky Settings → Developer** after enabling **Developer Mode**.
-Choose **Install Plugin from ZIP file** and select `Decky.Language.Tutor.zip` from a build artifact or release.
+Download the `Decky.Language.Tutor-v*.zip` file from **Actions → Artifacts** or **Releases**.
+Select that same ZIP in **Install Plugin from ZIP file** without extracting it.
 The ZIP is small. Decky Loader downloads and verifies the Linux runtime and Python packages during
 installation (about 173 MiB). Keep the Deck online until installation finishes.
 Optional offline OCR and translation models are downloaded in the **Translation** tab.
@@ -29,12 +30,15 @@ uses a captured frame. Game input behavior can vary with Steam Input and the gam
 ## Build and package
 
 Use Node 20 and pnpm 9. Run `pnpm install --frozen-lockfile`, `pnpm typecheck`, and `pnpm build`.
-Run `pnpm package` to create `out/Decky.Language.Tutor.zip`. Local builds and CI build artifacts
+Run `pnpm package` to create a versioned ZIP such as `out/Decky.Language.Tutor-v0.1.2.zip`.
+GitHub Actions adds `-build.<run>.<attempt>`, for example `Decky.Language.Tutor-v0.1.2-build.4.1.zip`.
+Local builds and CI build artifacts
 use the checksum-pinned Linux dependency archive from Decky Translator 0.9.1. Release builds use
 the fork's own archive from the same GitHub release.
 
 For installation without downloading runtime dependencies on the Deck, run
-`pnpm package:full /path/to/plugin-dependencies.tar.gz` to create `out/Decky.Language.Tutor.Full.zip`.
+`pnpm package:full /path/to/plugin-dependencies.tar.gz` to create a versioned
+`Decky.Language.Tutor.Full-v*.zip` in `out/`.
 
 A manual workflow run with a version matching `package.json` creates a draft GitHub Release with
 the ZIP and its Linux x86-64 dependency archive. Publish the draft before installing its ZIP so

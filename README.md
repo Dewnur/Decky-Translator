@@ -36,8 +36,9 @@ frame is visible, Tutor requests Steam's full-screen composition so Steam can ro
 
 ### Phrase Highlighting
 
-Set **Input Language** to **English**, choose an output language, and enable **Phrase Highlighting**
-on the main tab with **Learn English** off. Capture a screen as usual. The likely subtitle near the
+Enable **Phrase Highlighting** below **Learn English** on the main tab. To use it, turn off
+**Learn English**, set **Input Language** to **English**, and choose an output language.
+Capture a screen as usual. The likely subtitle near the
 lower center shows up to two highlighted phrases and the full translation below it. To use Yandex,
 select **Yandex Cloud Translate** in the **Translation** tab.
 

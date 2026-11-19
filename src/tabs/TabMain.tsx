@@ -164,6 +164,16 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 onChange={(value) => updateSetting('learnMode', value, 'Learn English')}
                             />
                         </PanelSectionRow>
+                        <PanelSectionRow>
+                            <ToggleField
+                                label="Phrase Highlighting"
+                                description={settings.learnMode
+                                    ? "Turn off Learn English to use phrase highlighting in regular translation."
+                                    : "Highlight common phrases in English subtitles and show the full translation below. Set Input Language to English."}
+                                checked={settings.phraseHighlighting}
+                                onChange={value => updateSetting("phraseHighlighting", value, "Phrase Highlighting")}
+                            />
+                        </PanelSectionRow>
                         {settings.learnMode && (
                             <PanelSectionRow>
                                 <DropdownItem
@@ -171,16 +181,6 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                     rgOptions={[...LEARN_WORD_LAYOUTS]}
                                     selectedOption={settings.learnWordLayout}
                                     onChange={(option) => updateSetting('learnWordLayout', option.data, 'Word translation layout')}
-                                />
-                            </PanelSectionRow>
-                        )}
-                        {!settings.learnMode && (
-                            <PanelSectionRow>
-                                <ToggleField
-                                    label="Phrase Highlighting"
-                                    description="Highlight common phrases in English subtitles and show the full translation below. Set Input Language to English."
-                                    checked={settings.phraseHighlighting}
-                                    onChange={value => updateSetting("phraseHighlighting", value, "Phrase Highlighting")}
                                 />
                             </PanelSectionRow>
                         )}

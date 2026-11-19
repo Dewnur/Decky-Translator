@@ -18,13 +18,15 @@ export interface PhraseView {
     extractions: PhraseExtraction[];
 }
 
-export function findSubtitle(candidates: readonly TextRegion[], width: number, height: number): TextRegion | undefined {
+export function findSubtitle({ candidates, extractions }: PhraseView, width: number, height: number): TextRegion | undefined {
     if (width <= 0 || height <= 0) return;
+    const matchedTexts = new Set(extractions.filter(extraction => extraction.phrases.length).map(extraction => extraction.text));
     let best: TextRegion | undefined;
     let bestScore = Infinity;
     for (const region of candidates) {
         const { rect, text, isDialog } = region;
-        if (rect.right <= rect.left || rect.bottom <= rect.top || (!isDialog && text.trim().split(/\s+/).length < 3)) continue;
+        if (rect.right <= rect.left || rect.bottom <= rect.top) continue;
+        if (!isDialog && !matchedTexts.has(text) && text.trim().split(/\s+/).length < 3) continue;
         const x = (rect.left + rect.right) / (2 * width);
         const y = (rect.top + rect.bottom) / (2 * height);
         if (x < 0.18 || x > 0.82 || y < 0.60 || y > 1) continue;

@@ -20,6 +20,7 @@ class TestPhraseExtractor(unittest.TestCase):
             self.assertTrue(item["translation"])
 
     def test_examples_and_inflections(self):
+        self.assert_phrases("Calm down!", [("Calm down", "calm down")])
         self.assert_phrases("I wouldn't count on him showing up.", [
             ("count on", "count on"), ("showing up", "show up"),
         ])

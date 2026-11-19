@@ -468,7 +468,7 @@ export const TranslatedTextOverlay: VFC<{
     const [naturalDimensions, setNaturalDimensions] = useState({ width: 1280, height: 800 });
     const [loadedImageData, setLoadedImageData] = useState("");
     const subtitle = visible && !learnView && translationsVisible && phraseView && imageData === loadedImageData
-        ? findSubtitle(phraseView.candidates, naturalDimensions.width, naturalDimensions.height)
+        ? findSubtitle(phraseView, naturalDimensions.width, naturalDimensions.height)
         : undefined;
 
     // Load font as a side-effect (network request / DOM injection)

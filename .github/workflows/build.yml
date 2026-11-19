@@ -58,6 +58,7 @@ jobs:
       - name: Check and build frontend
         run: |
           pnpm typecheck
+          node --test tests/test_phrase_subtitle.mjs
           pnpm build
 
       - name: Test local phrase extraction

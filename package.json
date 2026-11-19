@@ -1,6 +1,6 @@
 {
   "name": "decky-language-tutor",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "Study English and translate game text on Steam Deck",
   "scripts": {

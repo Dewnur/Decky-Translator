@@ -1,9 +1,11 @@
 // Overlay.tsx - Handles overlay components and UI
 
-import { findModuleChild } from "@decky/ui";
+import { findModuleChild, GamepadButton } from "@decky/ui";
+import type { GamepadEvent } from "@decky/ui";
 
 
 import { VFC, useEffect, useState, useRef, useCallback, useMemo } from "react";
+import type { RefObject } from "react";
 import { TranslatedRegion } from "./TextTranslator";
 import { Button } from "./Input";
 import { logger } from "./Logger";
@@ -44,7 +46,24 @@ const useUIComposition: ((composition: UIComposition) => void) | undefined = fin
 
 // Steam marks the game overlay active in Opaque mode, handing input to Steam UI.
 // Unmounting releases this request and lets Steam restore its normal input routing.
-const CompositionRequest: VFC = () => {
+const CompositionRequest: VFC<{ overlay: RefObject<HTMLDivElement> }> = ({ overlay }) => {
+    useEffect(() => {
+        const ownerWindow = overlay.current?.ownerDocument.defaultView;
+        if (!ownerWindow) return;
+
+        // Steam's AppRunning screen can treat Cancel as Abort Game. Consume it before that
+        // screen sees it. Tutor still receives the physical B release through hidraw.
+        const preventSteamCancel = (event: Event) => {
+            if (event.type !== "vgp_oncancel" && (event as GamepadEvent).detail?.button !== GamepadButton.CANCEL) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        };
+        const eventTypes = ["vgp_onbuttondown", "vgp_onbuttonup", "vgp_oncancel"];
+        for (const type of eventTypes) ownerWindow.addEventListener(type, preventSteamCancel, true);
+        return () => {
+            for (const type of eventTypes) ownerWindow.removeEventListener(type, preventSteamCancel, true);
+        };
+    }, [overlay]);
     useUIComposition?.(UIComposition.Opaque);
     return null;
 };
@@ -412,6 +431,7 @@ export const TranslatedTextOverlay: VFC<{
 
     // Ref to the screenshot image element
     const imgRef = useRef<HTMLImageElement>(null);
+    const overlayRef = useRef<HTMLDivElement>(null);
 
     // State to track actual rendered image dimensions
     const [imageDimensions, setImageDimensions] = useState({ width: 0, height: 0 });
@@ -518,8 +538,9 @@ export const TranslatedTextOverlay: VFC<{
 
     return (
         <>
-        {visible && <CompositionRequest />}
+        {visible && <CompositionRequest overlay={overlayRef} />}
         <div id='decky-language-tutor-overlay'
+             ref={overlayRef}
              style={{
                  height: "100vh",
                  width: "100vw",

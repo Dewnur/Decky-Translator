@@ -8,6 +8,12 @@ export interface StudySegment {
     phrase?: PhraseMatch;
 }
 
+export function reflowStudyText(text: string): string {
+    return text.replace(/\r\n?/g, "\n").replace(/[ \t]*\n(?:[ \t]*\n)*[ \t]*/g, lineBreaks =>
+        lineBreaks.indexOf("\n") === lineBreaks.lastIndexOf("\n") ? " " : "\n\n",
+    );
+}
+
 export function segmentText(text: string, words: boolean, matches: readonly PhraseMatch[] = []): StudySegment[] {
     if (!words || !matches.length) return segmentPlainText(text, words);
 

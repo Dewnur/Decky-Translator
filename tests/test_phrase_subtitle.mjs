@@ -16,7 +16,7 @@ function compile(path, imports = {}) {
 
 const phraseSegments = compile("../src/phrases/phraseSegments.ts");
 const { findSubtitle } = await import(compile("../src/phrases/PhraseSubtitle.tsx", { "./phraseSegments": phraseSegments }));
-const { segmentText } = await import(compile("../src/learn/segmentText.ts", { "../phrases/phraseSegments": phraseSegments }));
+const { reflowStudyText, segmentText } = await import(compile("../src/learn/segmentText.ts", { "../phrases/phraseSegments": phraseSegments }));
 
 const subtitle = {
     text: "Calm down!",
@@ -62,4 +62,12 @@ test("keeps original Unicode offsets, spaces and line breaks in a grouped expres
     assert.equal(group.start, text.indexOf("figure"));
     assert.equal(segments.map(part => part.text).join(""), text);
     assert.ok(segments.every(part => text.slice(part.start, part.start + part.text.length) === part.text));
+});
+
+test("reflows OCR line breaks for display while preserving paragraphs and phrase spacing", () => {
+    assert.equal(reflowStudyText("Every enemy has a defense gauge.\r\n You can deplete it by parrying,\nkicking."),
+        "Every enemy has a defense gauge. You can deplete it by parrying, kicking.");
+    assert.equal(reflowStudyText("У каждого врага есть шкала.\n \nОна уменьшается\nпри парировании."),
+        "У каждого врага есть шкала.\n\nОна уменьшается при парировании.");
+    assert.equal(reflowStudyText("figure  this\nout"), "figure  this out");
 });

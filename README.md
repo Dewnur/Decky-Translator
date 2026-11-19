@@ -26,7 +26,8 @@ Optional offline OCR and translation models are downloaded in the **Translation*
    words or phrases with the **D-pad** or the Steam Deck's **left stick**. Left and right follow
    reading order, and up and down move to the nearest word on the adjacent row. Hold a direction
    to keep moving.
-   The full translation loads automatically. **X** switches between words and punctuation-based phrases.
+   The full translation loads automatically. Use **L2/R2** to scroll the translation up or down.
+   **X** switches between words and punctuation-based phrases.
    Words mode opens first and translates each word separately from the sentence. **B** closes the
    study overlay. The panel also has touch controls.
 

@@ -3,11 +3,20 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-const file = new URL("../src/phrases/PhraseSubtitle.tsx", import.meta.url);
-const { outputText } = ts.transpileModule(readFileSync(file, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.ES2020, jsx: ts.JsxEmit.React },
-});
-const { findSubtitle } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`);
+function compile(path, imports = {}) {
+    const file = new URL(path, import.meta.url);
+    let { outputText } = ts.transpileModule(readFileSync(file, "utf8"), {
+        compilerOptions: { module: ts.ModuleKind.ES2020, target: ts.ScriptTarget.ES2020, jsx: ts.JsxEmit.React },
+    });
+    for (const [specifier, url] of Object.entries(imports)) {
+        outputText = outputText.replace(JSON.stringify(specifier), JSON.stringify(url));
+    }
+    return `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`;
+}
+
+const phraseSegments = compile("../src/phrases/phraseSegments.ts");
+const { findSubtitle } = await import(compile("../src/phrases/PhraseSubtitle.tsx", { "./phraseSegments": phraseSegments }));
+const { segmentText } = await import(compile("../src/learn/segmentText.ts", { "../phrases/phraseSegments": phraseSegments }));
 
 const subtitle = {
     text: "Calm down!",
@@ -29,4 +38,28 @@ test("selects a short subtitle once an expression is found", () => {
 test("keeps matches outside the subtitle area out of selection", () => {
     const candidates = [{ ...subtitle, rect: { ...subtitle.rect, top: 30, bottom: 60 } }];
     assert.equal(findSubtitle({ candidates, extractions: [extraction] }, 1280, 800), undefined);
+});
+
+test("groups a recognized expression into one selectable item and keeps punctuation", () => {
+    const text = "Calm down, Skelly.";
+    const segments = segmentText(text, true, extraction.phrases);
+    assert.deepEqual(segments.filter(part => part.selectable).map(part => part.text), ["Calm down", "Skelly"]);
+    assert.equal(segments[0].phrase.canonical, "calm down");
+    assert.equal(segments.map(part => part.text).join(""), text);
+    assert.deepEqual(segmentText(text, true).filter(part => part.selectable).map(part => part.text),
+        ["Calm", "down", "Skelly"]);
+    assert.ok(segmentText(text, false, extraction.phrases).every(part => !part.phrase));
+});
+
+test("keeps original Unicode offsets, spaces and line breaks in a grouped expression", () => {
+    const text = "👋 I can figure  this\nout, then.";
+    const surface = "figure  this\nout";
+    const start = Array.from(text.slice(0, text.indexOf("figure"))).length;
+    const phrases = [{ start, end: start + surface.length, surface, canonical: "figure out" }];
+    const segments = segmentText(text, true, phrases);
+    const group = segments.find(part => part.phrase);
+    assert.equal(group.text, surface);
+    assert.equal(group.start, text.indexOf("figure"));
+    assert.equal(segments.map(part => part.text).join(""), text);
+    assert.ok(segments.every(part => text.slice(part.start, part.start + part.text.length) === part.text));
 });

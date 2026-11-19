@@ -1,10 +1,23 @@
+import { splitPhrases } from "../phrases/phraseSegments";
+import type { PhraseMatch } from "../phrases/phraseSegments";
+
 export interface StudySegment {
     start: number;
     text: string;
     selectable: boolean;
+    phrase?: PhraseMatch;
 }
 
-export function segmentText(text: string, words: boolean): StudySegment[] {
+export function segmentText(text: string, words: boolean, matches: readonly PhraseMatch[] = []): StudySegment[] {
+    if (!words || !matches.length) return segmentPlainText(text, words);
+
+    return splitPhrases(text, matches).flatMap(({ start, text, phrase }) => {
+        if (phrase) return [{ start, text, selectable: true, phrase }];
+        return segmentPlainText(text, true).map(segment => ({ ...segment, start: start + segment.start }));
+    });
+}
+
+function segmentPlainText(text: string, words: boolean): StudySegment[] {
     const pattern = words
         ? /[\p{L}\p{M}\p{N}]+(?:['’-][\p{L}\p{M}\p{N}]+)*/gu
         : /[^.!?,;:…\r\n]+[.!?,;:…]*/gu;

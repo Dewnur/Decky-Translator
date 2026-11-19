@@ -3,12 +3,14 @@ import { Button } from "../Input";
 import type { Input } from "../Input";
 import type { TextRegion } from "../TextRecognizer";
 import { segmentText } from "./segmentText";
+import type { StudySegment } from "./segmentText";
 import { findInitialStudyRegion } from "./subtitlePriority";
 import { useStudyTranslation } from "./useStudyTranslation";
 import { translateStudyTexts } from "./studyTranslationCache";
 import { StudyWordPopover } from "./StudyWordPopover";
 import { findVerticalStudyPart } from "./studyNavigation";
 import type { LearnWordLayout } from "./wordLayout";
+import type { PhraseView } from "../phrases/phraseSegments";
 
 export interface LearnControls {
     dismiss: () => void;
@@ -20,6 +22,7 @@ interface LearnOverlayProps extends LearnControls {
     regions: TextRegion[];
     targetLanguage: string;
     wordLayout: LearnWordLayout;
+    phraseView: PhraseView | null;
     widthFactor: number;
     heightFactor: number;
     imageHeight: number;
@@ -27,13 +30,17 @@ interface LearnOverlayProps extends LearnControls {
     captureHeight: number;
 }
 
+function findSelectedPartIndex(parts: readonly StudySegment[], start: number): number {
+    return Math.max(0, parts.findIndex(part => part.start <= start && start < part.start + part.text.length));
+}
+
 export function LearnOverlay({
-    regions, targetLanguage, wordLayout, widthFactor, heightFactor, imageHeight, captureWidth, captureHeight,
+    regions, targetLanguage, wordLayout, phraseView, widthFactor, heightFactor, imageHeight, captureWidth, captureHeight,
     dismiss, subscribeToStudyButtons, translateRegions,
 }: LearnOverlayProps) {
     const [selection, setSelection] = useState(() => ({
         region: findInitialStudyRegion(regions, captureWidth, captureHeight),
-        part: 0,
+        partStart: 0,
         words: true,
     }));
     const requests = useRef(new Map<string, Promise<string>>());
@@ -41,11 +48,14 @@ export function LearnOverlay({
     const selectedPart = useRef<HTMLButtonElement>(null);
 
     const region = regions[selection.region];
-    const segments = useMemo(() => segmentText(region.text, selection.words), [region.text, selection.words]);
+    const phraseMatches = phraseView?.extractions?.find(extraction => extraction.text === region.text)?.phrases;
+    const segments = useMemo(() => segmentText(region.text, selection.words, phraseMatches), [region.text, selection.words, phraseMatches]);
     const parts = useMemo(() => segments.filter(segment => segment.selectable), [segments]);
     const sources = useMemo(() => [...new Set(parts.map(part => part.text))], [parts]);
     const targetConfigured = !!targetLanguage && targetLanguage !== 'en';
-    const selectedWord = selection.words ? parts[selection.part]?.text : undefined;
+    const selectedIndex = findSelectedPartIndex(parts, selection.partStart);
+    const selectedSegment = parts[selectedIndex];
+    const selectedWord = selection.words ? selectedSegment?.text : undefined;
     const activeLayout = selection.words ? wordLayout : undefined;
     const panelAtTop = (region.rect.top + region.rect.bottom) * heightFactor / 2 > imageHeight / 2;
 
@@ -65,7 +75,7 @@ export function LearnOverlay({
     }, [requestTexts]);
 
     const blockTranslation = useStudyTranslation(targetConfigured ? region.text : null, requestText, 120);
-    const canTranslateWords = targetConfigured && blockTranslation.value.status === "ready";
+    const canTranslateWords = targetConfigured && blockTranslation.value.status === "ready" && phraseView?.extractions !== null;
     const wordTranslation = useStudyTranslation(
         canTranslateWords && activeLayout !== "interlinear" ? selectedWord ?? null : null,
         requestText,
@@ -87,7 +97,7 @@ export function LearnOverlay({
             ? wordTranslation : null;
 
     function selectRegion(index: number) {
-        setSelection(previous => ({ ...previous, region: index, part: 0 }));
+        setSelection(previous => ({ ...previous, region: index, partStart: 0 }));
     }
 
     function moveRegion(delta: number) {
@@ -95,7 +105,7 @@ export function LearnOverlay({
         setSelection(previous => ({
             ...previous,
             region: (previous.region + delta + regions.length) % regions.length,
-            part: 0,
+            partStart: 0,
         }));
     }
 
@@ -105,15 +115,17 @@ export function LearnOverlay({
             ? Array.from(studyText.current?.querySelectorAll("button") ?? [], button => button.getBoundingClientRect())
             : [];
         setSelection(previous => {
-            const part = vertical
-                ? findVerticalStudyPart(positions, previous.part, delta)
-                : Math.max(0, Math.min(previous.part + delta, parts.length - 1));
-            return part === previous.part ? previous : { ...previous, part };
+            if (previous.region !== selection.region || previous.words !== selection.words) return previous;
+            const current = findSelectedPartIndex(parts, previous.partStart);
+            const next = vertical
+                ? findVerticalStudyPart(positions, current, delta)
+                : Math.max(0, Math.min(current + delta, parts.length - 1));
+            return next === current ? previous : { ...previous, partStart: parts[next].start };
         });
     }
 
     function toggleWords() {
-        setSelection(previous => ({ ...previous, words: !previous.words, part: 0 }));
+        setSelection(previous => ({ ...previous, words: !previous.words, partStart: 0 }));
     }
 
     function translationText(value: typeof blockTranslation.value, source: string): string {
@@ -154,7 +166,7 @@ export function LearnOverlay({
 
     useEffect(() => {
         selectedPart.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
-    }, [selection.region, selection.part, activeLayout, interlinearTranslation.value.status]);
+    }, [selection.region, selectedIndex, selectedSegment, activeLayout, interlinearTranslation.value.status]);
 
     let partIndex = 0;
     return (
@@ -189,6 +201,14 @@ export function LearnOverlay({
                 .dlt-study-text[data-glosses="true"] button[aria-pressed="true"] { background: var(--dlt-selection-fill); }
                 .dlt-study-gloss { color: #bdcddd; font-size: 0.78em; line-height: 1.25; }
                 .dlt-study-text button[aria-pressed="true"] .dlt-study-gloss { color: var(--dlt-selection); }
+                .dlt-study-text[data-layout] button[data-phrase] {
+                    color: #211900; background: #ffd84d; border-color: #ffd84d;
+                }
+                .dlt-study-text[data-layout] button[data-phrase] .dlt-study-gloss { color: #493805; }
+                .dlt-study-text button[data-phrase] .dlt-study-source { white-space: pre-wrap; }
+                .dlt-study-text[data-layout] button[data-phrase][aria-pressed="true"] {
+                    box-shadow: inset 0 0 0 2px #5b4100;
+                }
                 .dlt-study-original { position: relative; }
                 .dlt-study-original[data-popover="true"] { padding-top: 3.3em; }
                 .dlt-study-popover {
@@ -255,17 +275,18 @@ export function LearnOverlay({
                 </div>
                 <div style={{ marginTop: 8, overflowWrap: "anywhere" }}>
                     <div className="dlt-study-original" data-popover={showPopover}>
-                        {showGlosses && <div className="dlt-study-caption">Words on their own</div>}
+                        {showGlosses && <div className="dlt-study-caption">{phraseMatches?.length ? "Words and expressions" : "Words on their own"}</div>}
                         <div ref={studyText} lang="en" className="dlt-study-text" data-layout={activeLayout} data-glosses={showGlosses}>
                             {segments.map(segment => {
                                 if (!segment.selectable) return <span key={segment.start}>{segment.text}</span>;
                                 const index = partIndex++;
-                                const selected = index === selection.part;
+                                const selected = index === selectedIndex;
                                 return (
                                     <button key={segment.start} type="button" aria-pressed={selected}
+                                        data-phrase={segment.phrase?.canonical}
                                         ref={selected ? selectedPart : undefined}
-                                        onClick={() => setSelection(previous => ({ ...previous, part: index }))}>
-                                        <span>{segment.text}</span>
+                                        onClick={() => setSelection(previous => ({ ...previous, partStart: segment.start }))}>
+                                        <span className="dlt-study-source">{segment.text}</span>
                                         {showGlosses && (
                                             <span className="dlt-study-gloss" lang={targetLanguage} dir="auto">{glossFor(segment.text)}</span>
                                         )}
@@ -280,7 +301,7 @@ export function LearnOverlay({
                     </div>
                     {individualWordVisible && activeLayout === "row" && selectedWord && (
                         <div className="dlt-study-word">
-                            <div className="dlt-study-caption">Word on its own</div>
+                            <div className="dlt-study-caption">{selectedSegment?.phrase ? "Expression on its own" : "Word on its own"}</div>
                             <div className="dlt-study-word-pair" aria-live="polite">
                                 <strong lang="en">{selectedWord}</strong>
                                 <span aria-hidden="true">→</span>

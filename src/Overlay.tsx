@@ -16,7 +16,7 @@ import type { LearnControls } from "./learn/LearnOverlay";
 import { DEFAULT_LEARN_WORD_LAYOUT } from "./learn/wordLayout";
 import type { LearnWordLayout } from "./learn/wordLayout";
 import { findSubtitle, matchesSubtitle, PhraseSubtitle } from "./phrases/PhraseSubtitle";
-import type { PhraseExtraction, PhraseView } from "./phrases/PhraseSubtitle";
+import type { PhraseExtraction, PhraseView } from "./phrases/phraseSegments";
 import type { TextRegion } from "./TextRecognizer";
 
 export type HorizontalTextAlignment = 'left' | 'right' | 'center' | 'justify';
@@ -293,7 +293,7 @@ export class ImageState {
     }
 
     setPhraseCandidates(candidates: readonly TextRegion[]): void {
-        this.phraseView = { candidates, extractions: [] };
+        this.phraseView = { candidates, extractions: null };
         this.notifyListeners();
     }
 
@@ -618,6 +618,7 @@ export const TranslatedTextOverlay: VFC<{
                         return <LearnOverlay {...learnControls} regions={regions}
                             targetLanguage={learnView.targetLanguage}
                             wordLayout={learnView.wordLayout}
+                            phraseView={phraseView}
                             widthFactor={widthFactor} heightFactor={heightFactor}
                             imageHeight={imageDimensions.height}
                             captureWidth={naturalDimensions.width} captureHeight={naturalDimensions.height} />;
@@ -625,7 +626,7 @@ export const TranslatedTextOverlay: VFC<{
 
                     {subtitle && phraseView && (
                         <PhraseSubtitle subtitle={subtitle}
-                            matches={phraseView.extractions.find(extraction => extraction.text === subtitle.text)?.phrases ?? []}
+                            matches={phraseView.extractions?.find(extraction => extraction.text === subtitle.text)?.phrases ?? []}
                             translation={regions.find(region => matchesSubtitle(region, subtitle))?.translatedText}
                             heightFactor={getScalingFactor().heightFactor}
                             imageHeight={imageDimensions.height || window.innerHeight} />

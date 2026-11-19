@@ -36,11 +36,11 @@ frame is visible, Tutor requests Steam's full-screen composition so Steam can ro
 
 ### Phrase Highlighting
 
-Enable **Phrase Highlighting** below **Learn English** on the main tab. To use it, turn off
-**Learn English**, set **Input Language** to **English**, and choose an output language.
-Capture a screen as usual. The likely subtitle near the
-lower center shows up to two highlighted phrases and the full translation below it. To use Yandex,
-select **Yandex Cloud Translate** in the **Translation** tab.
+Enable **Phrase Highlighting** below **Learn English** on the main tab. In Learn Mode, **Words**
+groups and highlights up to two expressions in the selected block. The translation under each
+highlighted tile covers the whole expression, and the full translation appears below. For regular
+translation, set **Input Language** to **English** to highlight the likely subtitle near the lower
+center of the capture. To use Yandex, select **Yandex Cloud Translate** in the **Translation** tab.
 
 Phrase matching runs locally against the bundled English–Russian dictionary and starts
 independently of translation. A full dependency build uses spaCy without a statistical model.

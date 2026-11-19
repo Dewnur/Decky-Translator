@@ -1,26 +1,10 @@
 import type { TextRegion } from "../TextRecognizer";
-
-export interface PhraseMatch {
-    start: number;
-    end: number;
-    surface: string;
-    canonical: string;
-    translation: string;
-}
-
-export interface PhraseExtraction {
-    text: string;
-    phrases: PhraseMatch[];
-}
-
-export interface PhraseView {
-    candidates: readonly TextRegion[];
-    extractions: PhraseExtraction[];
-}
+import { splitPhrases } from "./phraseSegments";
+import type { PhraseMatch, PhraseView } from "./phraseSegments";
 
 export function findSubtitle({ candidates, extractions }: PhraseView, width: number, height: number): TextRegion | undefined {
     if (width <= 0 || height <= 0) return;
-    const matchedTexts = new Set(extractions.filter(extraction => extraction.phrases.length).map(extraction => extraction.text));
+    const matchedTexts = new Set(extractions?.filter(extraction => extraction.phrases.length).map(extraction => extraction.text));
     let best: TextRegion | undefined;
     let bestScore = Infinity;
     for (const region of candidates) {
@@ -43,24 +27,6 @@ export function matchesSubtitle(region: TextRegion, subtitle: TextRegion): boole
     return region.text === subtitle.text && region.rect.left === subtitle.rect.left &&
         region.rect.top === subtitle.rect.top && region.rect.right === subtitle.rect.right &&
         region.rect.bottom === subtitle.rect.bottom;
-}
-
-export function splitPhrases(text: string, matches: readonly PhraseMatch[]) {
-    // Python indices count Unicode code points. String.slice would count UTF-16 units.
-    const chars = Array.from(text);
-    const parts: Array<{ text: string; phrase?: PhraseMatch }> = [];
-    let cursor = 0;
-    for (const match of matches.slice(0, 2)) {
-        const { start, end, surface } = match;
-        if (!Number.isInteger(start) || !Number.isInteger(end) || start < cursor || end <= start || end > chars.length) continue;
-        const phrase = chars.slice(start, end).join("");
-        if (phrase !== surface) continue;
-        if (start > cursor) parts.push({ text: chars.slice(cursor, start).join("") });
-        parts.push({ text: phrase, phrase: match });
-        cursor = end;
-    }
-    if (cursor < chars.length) parts.push({ text: chars.slice(cursor).join("") });
-    return parts;
 }
 
 interface Props {

@@ -168,7 +168,7 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                             <ToggleField
                                 label="Phrase Highlighting"
                                 description={settings.learnMode
-                                    ? "Turn off Learn English to use phrase highlighting in regular translation."
+                                    ? "Highlight and translate common English expressions as a group in Words mode."
                                     : "Highlight common phrases in English subtitles and show the full translation below. Set Input Language to English."}
                                 checked={settings.phraseHighlighting}
                                 onChange={value => updateSetting("phraseHighlighting", value, "Phrase Highlighting")}

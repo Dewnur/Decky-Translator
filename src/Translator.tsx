@@ -7,7 +7,7 @@ import { TextTranslator } from "./TextTranslator";
 import { Input, InputMode, ActionType, ProgressInfo } from "./Input";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
-import type { PhraseExtraction } from "./phrases/PhraseSubtitle";
+import type { PhraseExtraction } from "./phrases/phraseSegments";
 
 // Screenshot response interface
 export interface ScreenshotResponse {
@@ -386,6 +386,20 @@ export class GameTranslatorLogic {
             }
             logger.info('Translator', `Found ${textRegions.length} text regions`);
 
+            if (textRegions.length && this.phraseHighlighting && (learnMode || this.getInputLanguage() === "en")) {
+                this.imageState.setPhraseCandidates(textRegions);
+                const texts = [...new Set(textRegions.map(region => region.text))];
+                const finishExtraction = (extractions: PhraseExtraction[]) => {
+                    if (!isCancelled()) this.imageState.setPhraseExtractions(extractions);
+                };
+                void call<[string[]], PhraseExtraction[]>("extract_phrases", texts).then(extractions => {
+                    finishExtraction(Array.isArray(extractions) ? extractions : []);
+                }, error => {
+                    logger.warn("Translator", "Phrase extraction failed", error);
+                    finishExtraction([]);
+                });
+            }
+
             if (learnMode && textRegions.length > 0) {
                 this.imageState.showTranslatedImage(
                     result.base64,
@@ -393,15 +407,6 @@ export class GameTranslatorLogic {
                     { targetLanguage },
                 );
             } else if (textRegions.length > 0) {
-                if (this.phraseHighlighting && this.getInputLanguage() === "en") {
-                    this.imageState.setPhraseCandidates(textRegions);
-                    const texts = [...new Set(textRegions.map(region => region.text))];
-                    void call<[string[]], PhraseExtraction[]>("extract_phrases", texts).then(extractions => {
-                        if (!isCancelled() && Array.isArray(extractions)) this.imageState.setPhraseExtractions(extractions);
-                    }).catch(error => {
-                        logger.warn("Translator", "Phrase extraction failed", error);
-                    });
-                }
                 const alreadyTranslated = textRegions.every(r => r.translatedText);
                 if (!alreadyTranslated) {
                     this.imageState.updateProcessingStep("Translating text", false, this.translationMethodHint());

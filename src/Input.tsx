@@ -92,6 +92,7 @@ const HIDRAW_BUTTON_MAP: Record<string, Button> = {
 const DIRECTION_BUTTONS = [Button.DPAD_UP, Button.DPAD_DOWN, Button.DPAD_LEFT, Button.DPAD_RIGHT] as const;
 type DirectionButton = typeof DIRECTION_BUTTONS[number];
 type StickPosition = [x: number, y: number];
+type StudyButtonListener = (button: Button, pressed: boolean) => void;
 
 function isDirectionButton(button: Button): button is DirectionButton {
     return DIRECTION_BUTTONS.some(direction => direction === button);
@@ -120,7 +121,7 @@ function stickToDirection([x, y]: StickPosition, previous: DirectionButton | und
 
 export class Input {
     private onButtonsPressedListeners: Array<(actionType: ActionType) => void> = [];
-    private buttonListeners = new Set<(button: Button) => void>();
+    private buttonListeners = new Set<StudyButtonListener>();
     private onProgressListeners: Array<(progressInfo: ProgressInfo) => void> = [];
     private touchStartTime: number | null = null;
 
@@ -237,6 +238,7 @@ export class Input {
 
         if (stateChanged) {
             const presses = [...newPressedButtons].filter(button => !this.currentlyPressedButtons.has(button));
+            const releases = [...this.currentlyPressedButtons].filter(button => !newPressedButtons.has(button));
             // Log the change
             const buttonList = Array.from(newPressedButtons).map(b => {
                 const entry = Object.entries(HIDRAW_BUTTON_MAP).find(([_, v]) => v === b);
@@ -251,7 +253,12 @@ export class Input {
             if (this.shortcutEnabled) this.processButtonState();
             for (const button of presses) {
                 if (!isDirectionButton(button)) {
-                    this.buttonListeners.forEach(listener => listener(button));
+                    this.buttonListeners.forEach(listener => listener(button, true));
+                }
+            }
+            for (const button of releases) {
+                if (!isDirectionButton(button)) {
+                    this.buttonListeners.forEach(listener => listener(button, false));
                 }
             }
         }
@@ -278,7 +285,7 @@ export class Input {
         const changed = direction !== previous;
         if (changed || now >= this.nextDirectionRepeat) {
             this.nextDirectionRepeat = now + (changed ? 350 : 140);
-            this.buttonListeners.forEach(listener => listener(direction));
+            this.buttonListeners.forEach(listener => listener(direction, true));
         }
     }
 
@@ -454,7 +461,7 @@ export class Input {
         this.setInputMode(this.inputMode);
     }
 
-    subscribeToButtonPresses = (listener: (button: Button) => void): (() => void) => {
+    subscribeToStudyButtons = (listener: StudyButtonListener): (() => void) => {
         const firstListener = this.buttonListeners.size === 0;
         this.buttonListeners.add(listener);
         if (firstListener) {

@@ -5,6 +5,7 @@ import { findModuleChild } from "@decky/ui";
 
 import { VFC, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { TranslatedRegion } from "./TextTranslator";
+import { Button } from "./Input";
 import { logger } from "./Logger";
 import { buildTranslatedFontFamily, ensureFontLoaded, resolveFontStyleCSS } from "./fonts";
 import type { FontStyleOption } from "./fonts";
@@ -41,11 +42,10 @@ const useUIComposition: ((composition: UIComposition) => void) | undefined = fin
     }
 );
 
-// Mountable component that holds a composition state request.
-// When unmounted, the hook cleanup calls RemoveMinimumCompositionStateRequest,
-// fully releasing the request so Steam's own UI sections can get input focus.
-const CompositionRequest: VFC<{ level: UIComposition }> = ({ level }) => {
-    useUIComposition?.(level);
+// Steam marks the game overlay active in Opaque mode, handing input to Steam UI.
+// Unmounting releases this request and lets Steam restore its normal input routing.
+const CompositionRequest: VFC = () => {
+    useUIComposition?.(UIComposition.Opaque);
     return null;
 };
 
@@ -518,7 +518,7 @@ export const TranslatedTextOverlay: VFC<{
 
     return (
         <>
-        {visible && useUIComposition && <CompositionRequest level={learnView ? UIComposition.Overlay : UIComposition.Notification} />}
+        {visible && <CompositionRequest />}
         <div id='decky-language-tutor-overlay'
              style={{
                  height: "100vh",
@@ -837,6 +837,17 @@ export const ImageOverlay: VFC<{ state: ImageState, learnControls: LearnControls
     const [translatedTextAlignment, setTranslatedTextAlignment] = useState<HorizontalTextAlignment>('center');
     const [translatedTextFontFamily, setTranslatedTextFontFamily] = useState<string>("");
     const [translatedTextFontStyle, setTranslatedTextFontStyle] = useState<FontStyleOption>('normal');
+
+    useEffect(() => {
+        if (!visible) return;
+        let closeOnRelease = false;
+        return learnControls.subscribeToStudyButtons((button, pressed) => {
+            if (button !== Button.B) return;
+            // Keep Steam's input focus until the button used to dismiss the overlay is up.
+            if (!pressed && closeOnRelease) learnControls.dismiss();
+            closeOnRelease = pressed;
+        });
+    }, [visible, learnControls]);
 
     useEffect(() => {
         logger.debug('ImageOverlay', 'useEffect mounting, registering state listener');

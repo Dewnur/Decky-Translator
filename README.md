@@ -31,8 +31,8 @@ Optional offline OCR and translation models are downloaded in the **Translation*
    study overlay. The panel also has touch controls.
 
 Turn off **Learn English** to use the original translation overlay. In **Control**, you can opt in
-to a capture shortcut. Choose a different shortcut if you also use Decky Translator. The study overlay
-uses a captured frame. Game input behavior can vary with Steam Input and the game.
+to a capture shortcut. Choose a different shortcut if you also use Decky Translator. While the captured
+frame is visible, Tutor requests Steam's full-screen composition so Steam can route input to the overlay.
 
 ## Build and package
 

@@ -326,7 +326,7 @@ export default definePlugin(() => {
     const logic = new GameTranslatorLogic(imageState);
     const learnControls = {
         dismiss: logic.dismiss,
-        subscribeToButtonPresses: logic.shortcutInputHandler.subscribeToButtonPresses,
+        subscribeToStudyButtons: logic.shortcutInputHandler.subscribeToStudyButtons,
         translateRegions: logic.translateLearnRegions,
     };
 

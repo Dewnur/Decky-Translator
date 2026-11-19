@@ -12,7 +12,7 @@ import type { LearnWordLayout } from "./wordLayout";
 
 export interface LearnControls {
     dismiss: () => void;
-    subscribeToButtonPresses: Input['subscribeToButtonPresses'];
+    subscribeToStudyButtons: Input['subscribeToStudyButtons'];
     translateRegions: (regions: TextRegion[], targetLanguage: string) => Promise<string[]>;
 }
 
@@ -29,7 +29,7 @@ interface LearnOverlayProps extends LearnControls {
 
 export function LearnOverlay({
     regions, targetLanguage, wordLayout, widthFactor, heightFactor, imageHeight, captureWidth, captureHeight,
-    dismiss, subscribeToButtonPresses, translateRegions,
+    dismiss, subscribeToStudyButtons, translateRegions,
 }: LearnOverlayProps) {
     const [selection, setSelection] = useState(() => ({
         region: findInitialStudyRegion(regions, captureWidth, captureHeight),
@@ -144,12 +144,13 @@ export function LearnOverlay({
             case Button.DPAD_LEFT: movePart(-1); break;
             case Button.DPAD_RIGHT: movePart(1); break;
             case Button.A: failedTranslation?.retry(); break;
-            case Button.B: dismiss(); break;
             case Button.X: toggleWords(); break;
         }
     };
 
-    useEffect(() => subscribeToButtonPresses(button => handleButton.current(button)), [subscribeToButtonPresses]);
+    useEffect(() => subscribeToStudyButtons((button, pressed) => {
+        if (pressed) handleButton.current(button);
+    }), [subscribeToStudyButtons]);
 
     useEffect(() => {
         selectedPart.current?.scrollIntoView?.({ block: "nearest", inline: "nearest" });

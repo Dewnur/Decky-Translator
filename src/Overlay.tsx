@@ -15,6 +15,9 @@ import { LearnOverlay } from "./learn/LearnOverlay";
 import type { LearnControls } from "./learn/LearnOverlay";
 import { DEFAULT_LEARN_WORD_LAYOUT } from "./learn/wordLayout";
 import type { LearnWordLayout } from "./learn/wordLayout";
+import { findSubtitle, matchesSubtitle, PhraseSubtitle } from "./phrases/PhraseSubtitle";
+import type { PhraseExtraction, PhraseView } from "./phrases/PhraseSubtitle";
+import type { TextRegion } from "./TextRecognizer";
 
 export type HorizontalTextAlignment = 'left' | 'right' | 'center' | 'justify';
 
@@ -79,6 +82,7 @@ export class ImageState {
     private imageData = "";
     private translatedRegions: TranslatedRegion[] = [];
     private learnView: LearnView | null = null;
+    private phraseView: PhraseView | null = null;
     private learnWordLayout = DEFAULT_LEARN_WORD_LAYOUT;
     private loading = false;
     private processingStep = ""; // Added to track current processing step
@@ -206,6 +210,7 @@ export class ImageState {
         // Clear any previous translations
         this.translatedRegions = [];
         this.learnView = null;
+        this.phraseView = null;
 
         // Ensure the overlay is visible
         this.visible = true;
@@ -272,6 +277,7 @@ export class ImageState {
         this.imageData = "";
         this.translatedRegions = [];
         this.learnView = null;
+        this.phraseView = null;
 
         logger.debug('ImageState', 'Hiding image and clearing all state');
 
@@ -280,6 +286,27 @@ export class ImageState {
 
     getLearnView(): LearnView | null {
         return this.learnView;
+    }
+
+    getPhraseView(): PhraseView | null {
+        return this.phraseView;
+    }
+
+    setPhraseCandidates(candidates: readonly TextRegion[]): void {
+        this.phraseView = { candidates, extractions: [] };
+        this.notifyListeners();
+    }
+
+    setPhraseExtractions(extractions: PhraseExtraction[]): void {
+        if (!this.phraseView) return;
+        this.phraseView = { ...this.phraseView, extractions };
+        this.notifyListeners();
+    }
+
+    clearPhraseView(): void {
+        if (!this.phraseView) return;
+        this.phraseView = null;
+        this.notifyListeners();
     }
 
     setLearnWordLayout(layout: LearnWordLayout): void {
@@ -425,8 +452,9 @@ export const TranslatedTextOverlay: VFC<{
     translatedTextFontFamily: string,
     translatedTextFontStyle: FontStyleOption,
     learnView: LearnView | null,
+    phraseView: PhraseView | null,
     learnControls: LearnControls,
-}> = ({ visible, imageData, regions, loading, processingStep, processingDetail, processingIsError, translationsVisible, fontScale, allowLabelGrowth, translatedTextAlignment, translatedTextFontFamily, translatedTextFontStyle, learnView, learnControls }) => {
+}> = ({ visible, imageData, regions, loading, processingStep, processingDetail, processingIsError, translationsVisible, fontScale, allowLabelGrowth, translatedTextAlignment, translatedTextFontFamily, translatedTextFontStyle, learnView, phraseView, learnControls }) => {
     // Composition layer is handled by CompositionRequest below -- only mounted when visible
 
     // Ref to the screenshot image element
@@ -439,6 +467,9 @@ export const TranslatedTextOverlay: VFC<{
     // State to track the natural (original) image dimensions from the screenshot
     const [naturalDimensions, setNaturalDimensions] = useState({ width: 1280, height: 800 });
     const [loadedImageData, setLoadedImageData] = useState("");
+    const subtitle = visible && !learnView && translationsVisible && phraseView && imageData === loadedImageData
+        ? findSubtitle(phraseView.candidates, naturalDimensions.width, naturalDimensions.height)
+        : undefined;
 
     // Load font as a side-effect (network request / DOM injection)
     useEffect(() => {
@@ -592,6 +623,14 @@ export const TranslatedTextOverlay: VFC<{
                             captureWidth={naturalDimensions.width} captureHeight={naturalDimensions.height} />;
                     })()}
 
+                    {subtitle && phraseView && (
+                        <PhraseSubtitle subtitle={subtitle}
+                            matches={phraseView.extractions.find(extraction => extraction.text === subtitle.text)?.phrases ?? []}
+                            translation={regions.find(region => matchesSubtitle(region, subtitle))?.translatedText}
+                            heightFactor={getScalingFactor().heightFactor}
+                            imageHeight={imageDimensions.height || window.innerHeight} />
+                    )}
+
                     {/* Overlay translated text boxes with adaptive font sizing */}
                     {!learnView && translationsVisible && (() => {
                         const { widthFactor, heightFactor, generalFactor } = getScalingFactor();
@@ -637,6 +676,7 @@ export const TranslatedTextOverlay: VFC<{
                         });
 
                         return regions.map((region, index) => {
+                            if (subtitle && matchesSubtitle(region, subtitle)) return null;
                             const fontSize = calculateFontSize(region, generalFactor, fontScale);
                             let displayText = region.translatedText || region.text;
 
@@ -848,6 +888,7 @@ export const ImageOverlay: VFC<{ state: ImageState, learnControls: LearnControls
     const [imageData, setImageData] = useState<string>("");
     const [regions, setRegions] = useState<TranslatedRegion[]>([]);
     const [learnView, setLearnView] = useState<LearnView | null>(null);
+    const [phraseView, setPhraseView] = useState<PhraseView | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
     const [processingStep, setProcessingStep] = useState<string>("");
     const [processingDetail, setProcessingDetail] = useState<string>("");
@@ -893,6 +934,7 @@ export const ImageOverlay: VFC<{ state: ImageState, learnControls: LearnControls
             setImageData(imgData);
             setRegions(textRegions);
             setLearnView(state.getLearnView());
+            setPhraseView(state.getPhraseView());
             setLoading(isLoading);
             setProcessingStep(currProcessingStep);
             setProcessingDetail(currProcessingDetail);
@@ -933,6 +975,7 @@ export const ImageOverlay: VFC<{ state: ImageState, learnControls: LearnControls
             translatedTextFontFamily={translatedTextFontFamily}
             translatedTextFontStyle={translatedTextFontStyle}
             learnView={learnView}
+            phraseView={phraseView}
             learnControls={learnControls}
         />
     );

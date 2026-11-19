@@ -34,6 +34,17 @@ Turn off **Learn English** to use the original translation overlay. In **Control
 to a capture shortcut. Choose a different shortcut if you also use Decky Translator. While the captured
 frame is visible, Tutor requests Steam's full-screen composition so Steam can route input to the overlay.
 
+### Phrase Highlighting
+
+Set **Input Language** to **English**, choose an output language, and enable **Phrase Highlighting**
+on the main tab with **Learn English** off. Capture a screen as usual. The likely subtitle near the
+lower center shows up to two highlighted phrases and the full translation below it. To use Yandex,
+select **Yandex Cloud Translate** in the **Translation** tab.
+
+Phrase matching runs locally against the bundled English–Russian dictionary and starts
+independently of translation. A full dependency build uses spaCy without a statistical model.
+The small ZIP also works with the existing runtime through its built-in rule matcher.
+
 ## Build and package
 
 Use Node 20 and pnpm 9. Run `pnpm install --frozen-lockfile`, `pnpm typecheck`, and `pnpm build`.

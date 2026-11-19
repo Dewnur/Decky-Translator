@@ -7,6 +7,7 @@ import { TextTranslator } from "./TextTranslator";
 import { Input, InputMode, ActionType, ProgressInfo } from "./Input";
 import { ImageState } from "./Overlay";
 import { logger } from "./Logger";
+import type { PhraseExtraction } from "./phrases/PhraseSubtitle";
 
 // Screenshot response interface
 export interface ScreenshotResponse {
@@ -28,6 +29,7 @@ export class GameTranslatorLogic {
     private hideIdenticalTranslations: boolean = false;
     private currentRunId: number = 0;
     private learnMode = false;
+    private phraseHighlighting = false;
 
     // Provider settings for upfront validation
     private ocrProvider: string = "rapidocr";
@@ -318,6 +320,11 @@ export class GameTranslatorLogic {
         this.learnMode = learnMode;
     }
 
+    setPhraseHighlighting(enabled: boolean): void {
+        this.phraseHighlighting = enabled;
+        if (!enabled) this.imageState.clearPhraseView();
+    }
+
     translateLearnRegions = async (regions: TextRegion[], targetLanguage: string): Promise<string[]> => {
         const translations = await this.textTranslator.translateText(
             regions.map(region => ({ ...region, translatedText: undefined })), 'en', targetLanguage,
@@ -386,6 +393,15 @@ export class GameTranslatorLogic {
                     { targetLanguage },
                 );
             } else if (textRegions.length > 0) {
+                if (this.phraseHighlighting && this.getInputLanguage() === "en") {
+                    this.imageState.setPhraseCandidates(textRegions);
+                    const texts = [...new Set(textRegions.map(region => region.text))];
+                    void call<[string[]], PhraseExtraction[]>("extract_phrases", texts).then(extractions => {
+                        if (!isCancelled() && Array.isArray(extractions)) this.imageState.setPhraseExtractions(extractions);
+                    }).catch(error => {
+                        logger.warn("Translator", "Phrase extraction failed", error);
+                    });
+                }
                 const alreadyTranslated = textRegions.every(r => r.translatedText);
                 if (!alreadyTranslated) {
                     this.imageState.updateProcessingStep("Translating text", false, this.translationMethodHint());

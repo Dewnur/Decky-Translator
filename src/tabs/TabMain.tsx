@@ -174,6 +174,16 @@ export const TabMain: VFC<TabMainProps> = ({ logic, overlayVisible, providerStat
                                 />
                             </PanelSectionRow>
                         )}
+                        {!settings.learnMode && (
+                            <PanelSectionRow>
+                                <ToggleField
+                                    label="Phrase Highlighting"
+                                    description="Highlight common phrases in English subtitles and show the full translation below. Set Input Language to English."
+                                    checked={settings.phraseHighlighting}
+                                    onChange={value => updateSetting("phraseHighlighting", value, "Phrase Highlighting")}
+                                />
+                            </PanelSectionRow>
+                        )}
                         <PanelSectionRow>
                             <ButtonItem
                                 bottomSeparator="standard"

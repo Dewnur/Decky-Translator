@@ -90,6 +90,7 @@ import requests
 
 # Import provider system
 from providers import ProviderManager, TextRegion, NetworkError, ApiKeyError, RateLimitError
+from providers.phrase_analysis import PhraseAnalysis
 from providers.translation_cache import TranslationCache, PROVIDER_TIERS, normalize
 
 _processing_lock = False
@@ -1146,6 +1147,7 @@ class Plugin:
 
     # Provider system
     _provider_manager: ProviderManager = None
+    _phrase_analysis = None
     _use_free_providers: bool = True  # Default to free providers (no API key needed)
     _ocr_provider: str = "chromescreenai"  # "rapidocr" (RapidOCR), "ocrspace" (OCR.space), or "googlecloud" (Google Cloud)
     _translation_provider: str = "freegoogle"
@@ -1284,6 +1286,13 @@ class Plugin:
                 self._input_language = value
             elif key == "input_mode":
                 self._input_mode = value
+            elif key == "phrase_highlighting":
+                saved = self._settings.set_setting(key, bool(value))
+                if saved and not value and self._phrase_analysis is not None:
+                    analysis = self._phrase_analysis
+                    self._phrase_analysis = None
+                    await analysis.close()
+                return saved
             elif key in ("learn_mode", "shortcut_enabled"):
                 value = bool(value)
             elif key == "learn_word_layout":
@@ -1506,6 +1515,7 @@ class Plugin:
                 "input_mode": self._input_mode,
                 "enabled": self._settings.get_setting("enabled", True),
                 "learn_mode": self._settings.get_setting("learn_mode", False),
+                "phrase_highlighting": self._settings.get_setting("phrase_highlighting", False),
                 "learn_word_layout": self._settings.get_setting("learn_word_layout", "interlinear"),
                 "shortcut_enabled": self._settings.get_setting("shortcut_enabled", False),
                 "use_free_providers": self._use_free_providers,
@@ -2240,6 +2250,16 @@ class Plugin:
                 except Exception as cleanup_error:
                     logger.warning(f"Failed to delete temporary screenshot: {cleanup_error}")
 
+    async def extract_phrases(self, texts):
+        if not isinstance(texts, list) or any(not isinstance(text, str) for text in texts):
+            return []
+        texts = [text for text in texts[:128] if 0 < len(text) <= 2048]
+        if not texts:
+            return []
+        if self._phrase_analysis is None:
+            self._phrase_analysis = PhraseAnalysis(PLUGIN_DIR)
+        return await self._phrase_analysis.extract(texts)
+
     async def translate_text(self, text_regions, target_language=None, input_language=None):
         try:
             if not text_regions:
@@ -2882,6 +2902,9 @@ class Plugin:
     async def _unload(self):
         logger.info("Unloading plugin")
         try:
+            if self._phrase_analysis is not None:
+                await self._phrase_analysis.close()
+
             if self._provider_manager:
                 self._provider_manager.shutdown()
 

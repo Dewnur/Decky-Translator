@@ -1,6 +1,28 @@
 This file lists the third-party dependencies used by Decky Language Tutor and their respective licenses.
 All pip packages also include full license files in their .dist-info directories within the plugin-dependencies.tar.gz archive.
 
+Phrase Highlighting dictionary (py_modules/providers/phrases-en-ru.tsv)
+License: Creative Commons Attribution-ShareAlike 4.0 International
+https://creativecommons.org/licenses/by-sa/4.0/
+Russian glosses and ranking data are adapted from the English–Russian WikDict
+export 2_2026-06, by Karl Bartel and the Wiktionary contributors via DBnary.
+https://www.wikdict.com/page/download
+https://download.wikdict.com/dictionaries/sqlite/2_2026-06/en-ru.sqlite3
+Idiomatic labels and selected glosses are from English Wiktionary via Kaikki
+(October 2026 dump, Wiktextract by Tatu Ylonen).
+https://en.wiktionary.org/
+https://kaikki.org/dictionary/English/tags/93/idiomatic/index.html
+English phrasal-verb headwords were also checked against the MIT-licensed
+generated-english-phrasal-verbs list by WithEnglishWeCan. No definitions or
+examples from that list were copied.
+https://github.com/WithEnglishWeCan/generated-english-phrasal-verbs
+This extract filters headwords, simplifies the formatting, and edits selected
+Russian glosses. The license above applies to the dictionary data.
+
+spaCy (full dependency builds)
+https://github.com/explosion/spaCy
+License: MIT License
+
 RapidOCR (rapidocr-onnxruntime)
 https://github.com/RapidAI/RapidOCR
 License: Apache License 2.0

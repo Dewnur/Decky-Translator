@@ -60,6 +60,9 @@ jobs:
           pnpm typecheck
           pnpm build
 
+      - name: Test local phrase extraction
+        run: PYTHONPATH=py_modules/providers python3 -m unittest discover -s tests -p test_phrase_extractor.py
+
       - name: Setup Python 3.13
         if: steps.names.outputs.release_tag != ''
         uses: actions/setup-python@v5
@@ -74,6 +77,13 @@ jobs:
         if: steps.names.outputs.release_tag != ''
         run: |
           pip install -r requirements.txt -t dependencies_build/py_modules --no-cache-dir
+
+      - name: Smoke test spaCy without a statistical model
+        if: steps.names.outputs.release_tag != ''
+        run: |
+          printf '%s\n' '["I would count on him showing up."]' |
+            python -S py_modules/providers/phrase_extractor.py "$PWD/dependencies_build/py_modules" |
+            python -c 'import json, sys; assert [p["canonical"] for p in json.load(sys.stdin)[0]["phrases"]] == ["count on", "show up"]'
 
       - name: Install cp311 packages for Decky Loader runtime
         if: steps.names.outputs.release_tag != ''

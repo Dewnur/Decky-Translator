@@ -17,6 +17,7 @@ function compile(path, imports = {}) {
 const phraseSegments = compile("../src/phrases/phraseSegments.ts");
 const { findSubtitle } = await import(compile("../src/phrases/PhraseSubtitle.tsx", { "./phraseSegments": phraseSegments }));
 const { reflowStudyText, segmentText } = await import(compile("../src/learn/segmentText.ts", { "../phrases/phraseSegments": phraseSegments }));
+const { placeStudyPanel, STUDY_PANEL_MARGIN } = await import(compile("../src/learn/studyPanelPlacement.ts"));
 
 const subtitle = {
     text: "Calm down!",
@@ -70,4 +71,26 @@ test("reflows OCR line breaks for display while preserving paragraphs and phrase
     assert.equal(reflowStudyText("У каждого врага есть шкала.\n \nОна уменьшается\nпри парировании."),
         "У каждого врага есть шкала.\n\nОна уменьшается при парировании.");
     assert.equal(reflowStudyText("figure  this\nout"), "figure  this out");
+});
+
+test("places the study panel opposite side text with a gap", () => {
+    const right = { left: 460, right: 750, top: 330, bottom: 450 };
+    const left = { ...right, left: 25, right: 290 };
+    const rightPlacement = placeStudyPanel(right, 800, 500);
+    const leftPlacement = placeStudyPanel(left, 800, 500);
+    assert.equal(rightPlacement.side, "left");
+    assert.ok(STUDY_PANEL_MARGIN + rightPlacement.width < right.left);
+    assert.equal(leftPlacement.side, "right");
+    assert.ok(800 - STUDY_PANEL_MARGIN - leftPlacement.width > left.right);
+});
+
+test("keeps centered subtitles visible above or below the panel", () => {
+    const bottom = { left: 150, right: 650, top: 350, bottom: 430 };
+    const top = { ...bottom, top: 35, bottom: 120 };
+    const bottomPlacement = placeStudyPanel(bottom, 800, 500);
+    const topPlacement = placeStudyPanel(top, 800, 500);
+    assert.equal(bottomPlacement.side, "top");
+    assert.ok(STUDY_PANEL_MARGIN + bottomPlacement.maxHeight < bottom.top);
+    assert.equal(topPlacement.side, "bottom");
+    assert.ok(500 - STUDY_PANEL_MARGIN - topPlacement.maxHeight > top.bottom);
 });

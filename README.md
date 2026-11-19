@@ -29,7 +29,8 @@ Optional offline OCR and translation models are downloaded in the **Translation*
    The full translation loads automatically. Use **L2/R2** to scroll the translation up or down.
    **X** switches between words and punctuation-based phrases.
    Words mode opens first and translates each word separately from the sentence. **B** closes the
-   study overlay. The panel also has touch controls.
+   study overlay. The panel also has touch controls and moves away from the selected text where
+   the capture has enough room.
 
 Turn off **Learn English** to use the original translation overlay. In **Control**, you can opt in
 to a capture shortcut. Choose a different shortcut if you also use Decky Translator. While the captured

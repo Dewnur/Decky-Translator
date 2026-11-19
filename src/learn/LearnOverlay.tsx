@@ -9,6 +9,7 @@ import { useStudyTranslation } from "./useStudyTranslation";
 import { translateStudyTexts } from "./studyTranslationCache";
 import { StudyWordPopover } from "./StudyWordPopover";
 import { findVerticalStudyPart } from "./studyNavigation";
+import { placeStudyPanel, STUDY_PANEL_MARGIN } from "./studyPanelPlacement";
 import type { LearnWordLayout } from "./wordLayout";
 import type { PhraseView } from "../phrases/phraseSegments";
 
@@ -47,6 +48,7 @@ export function LearnOverlay({
     const studyText = useRef<HTMLDivElement>(null);
     const translationViewport = useRef<HTMLDivElement>(null);
     const selectedPart = useRef<HTMLButtonElement>(null);
+    const [translationScrollable, setTranslationScrollable] = useState(false);
 
     const region = regions[selection.region];
     const phraseMatches = phraseView?.extractions?.find(extraction => extraction.text === region.text)?.phrases;
@@ -58,7 +60,10 @@ export function LearnOverlay({
     const selectedSegment = parts[selectedIndex];
     const selectedWord = selection.words ? selectedSegment?.text : undefined;
     const activeLayout = selection.words ? wordLayout : undefined;
-    const panelAtTop = (region.rect.top + region.rect.bottom) * heightFactor / 2 > imageHeight / 2;
+    const panel = placeStudyPanel({
+        left: region.rect.left * widthFactor, top: region.rect.top * heightFactor,
+        right: region.rect.right * widthFactor, bottom: region.rect.bottom * heightFactor,
+    }, captureWidth * widthFactor, imageHeight);
 
     const requestTexts = useCallback((texts: readonly string[]) =>
         translateStudyTexts(requests.current, targetLanguage, texts,
@@ -152,6 +157,10 @@ export function LearnOverlay({
         return distinctTranslation(interlinearTranslation.value.data.get(word), word) ?? "—";
     }
 
+    const fullTranslation = targetConfigured
+        ? reflowStudyText(translationText(blockTranslation.value, region.text))
+        : "Choose a translation language other than English in the Translation tab.";
+
     const handleButton = useRef<(button: Button) => void>(() => {});
     handleButton.current = button => {
         switch (button) {
@@ -180,50 +189,78 @@ export function LearnOverlay({
         if (translationViewport.current) translationViewport.current.scrollTop = 0;
     }, [selection.region, targetLanguage]);
 
+    useEffect(() => {
+        const viewport = translationViewport.current;
+        if (!viewport) return;
+        const update = () => setTranslationScrollable(viewport.scrollHeight > viewport.clientHeight + 1);
+        update();
+        if (typeof ResizeObserver !== "function") return;
+        const observer = new ResizeObserver(update);
+        observer.observe(viewport);
+        return () => observer.disconnect();
+    }, [fullTranslation]);
+
     let partIndex = 0;
     return (
         <>
             <style>{`
                 .dlt-study {
-                    --dlt-selection: #9ed1ff; --dlt-selection-fill: #24486d;
-                    display: flex; flex-direction: column; max-height: min(68vh, calc(100% - 16px));
+                    --dlt-selection: #b4ddff; --dlt-selection-fill: rgba(70, 137, 197, 0.48);
+                    position: absolute; z-index: 1; box-sizing: border-box;
+                    display: flex; flex-direction: column; min-width: 0;
+                    color: #f6f9ff; background: rgba(16, 24, 35, 0.77);
+                    backdrop-filter: blur(6px);
+                    border: 1px solid rgba(196, 221, 247, 0.25); border-radius: 10px;
+                    padding: 6px 9px 8px; box-shadow: 0 5px 16px rgba(0, 0, 0, 0.22);
+                    font-size: clamp(13px, 1.85vh, 16px);
+                }
+                .dlt-study[data-side="left"], .dlt-study[data-side="right"] {
+                    top: 50%; transform: translateY(-50%);
+                }
+                .dlt-study[data-side="top"], .dlt-study[data-side="bottom"] {
+                    left: 50%; transform: translateX(-50%);
                 }
                 .dlt-study button { font: inherit; color: inherit; cursor: pointer; }
                 .dlt-study button:focus-visible, .dlt-study-region:focus-visible {
                     outline: 2px solid white;
                     outline-offset: 2px;
                 }
-                .dlt-study-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: none; }
+                .dlt-study-actions { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; flex: none; font-size: 0.85em; }
                 .dlt-study-actions button {
-                    background: #243247; border: 1px solid #62748c; border-radius: 4px; padding: 5px 8px;
+                    background: rgba(181, 209, 240, 0.14); border: 1px solid transparent;
+                    border-radius: 6px; min-height: 27px; padding: 2px 7px;
                 }
+                .dlt-study-actions .dlt-study-icon { min-width: 27px; padding: 0; font-size: 1.25em; line-height: 1; }
+                .dlt-study-actions .dlt-study-close { margin-left: auto; }
+                .dlt-study-block-count { color: #d8e5f2; padding: 0 2px; font-variant-numeric: tabular-nums; }
+                .dlt-study-scroll-hint { color: #d8e5f2; padding: 0 3px; }
                 .dlt-study-content {
-                    display: flex; flex-direction: column; min-height: 0; margin-top: 8px;
-                    overflow-wrap: anywhere;
+                    display: flex; flex-direction: column; min-height: 0; margin-top: 5px;
+                    overflow-wrap: anywhere; text-align: center;
                 }
                 .dlt-study-text, .dlt-study-translation-text {
                     min-height: 1.4em; overflow-y: auto; white-space: pre-wrap;
                     overscroll-behavior-y: contain; touch-action: pan-y;
                     scrollbar-width: thin; scrollbar-color: #62748c transparent;
                 }
-                .dlt-study-text { max-height: 26vh; line-height: 1.55; }
+                .dlt-study-text { max-height: 23vh; line-height: 1.45; }
                 .dlt-study-text button {
-                    background: transparent; padding: 0 2px; border: 1px solid transparent; border-radius: 4px;
+                    background: transparent; padding: 0 2px; border: 1px solid transparent; border-radius: 6px;
                     vertical-align: top;
                 }
-                .dlt-study-text[data-layout] button { border-bottom-color: #62748c; }
+                .dlt-study-text[data-layout] button { border-bottom-color: rgba(178, 209, 240, 0.30); }
                 .dlt-study-text button[aria-pressed="true"] {
                     color: var(--dlt-selection); background: var(--dlt-selection-fill);
                     border-color: var(--dlt-selection);
                 }
-                .dlt-study-text[data-glosses="true"] { max-height: 30vh; }
+                .dlt-study-text[data-glosses="true"] { max-height: 27vh; }
                 .dlt-study-text[data-glosses="true"] button {
                     display: inline-flex; flex-direction: column; align-items: center;
                     vertical-align: top; max-width: 100%; white-space: normal; padding: 2px 4px;
-                    background: #172638; margin-bottom: 3px;
+                    background: rgba(181, 209, 240, 0.13); margin-bottom: 2px;
                 }
                 .dlt-study-text[data-glosses="true"] button[aria-pressed="true"] { background: var(--dlt-selection-fill); }
-                .dlt-study-gloss { color: #bdcddd; font-size: 0.78em; line-height: 1.25; }
+                .dlt-study-gloss { color: #d7e5f4; font-size: 0.79em; line-height: 1.22; }
                 .dlt-study-text button[aria-pressed="true"] .dlt-study-gloss { color: var(--dlt-selection); }
                 .dlt-study-text[data-layout] button[data-phrase] {
                     color: #211900; background: #ffd84d; border-color: #ffd84d;
@@ -234,32 +271,32 @@ export function LearnOverlay({
                     box-shadow: inset 0 0 0 2px #5b4100;
                 }
                 .dlt-study-original { position: relative; display: flex; flex-direction: column; min-height: 0; }
-                .dlt-study-original[data-popover="true"] { padding-top: 3.3em; }
+                .dlt-study-original[data-popover="true"] { padding-top: 3.1em; }
                 .dlt-study-popover {
                     position: absolute; transform: translateY(-100%); z-index: 2; visibility: hidden;
                     box-sizing: border-box; width: max-content; max-width: min(17em, 100%);
                     padding: 3px 7px; border: 1px solid var(--dlt-selection); border-radius: 4px;
-                    color: var(--dlt-selection); background: #1d3855; pointer-events: none;
+                    color: var(--dlt-selection); background: rgba(25, 48, 73, 0.92); pointer-events: none;
                 }
                 .dlt-study-popover > span { display: block; max-height: 2.4em; overflow: hidden; }
                 .dlt-study-popover::after {
                     content: ""; position: absolute; bottom: -4px; left: var(--dlt-arrow);
                     width: 6px; height: 6px; transform: translateX(-50%) rotate(45deg);
-                    background: #1d3855; border-right: 1px solid var(--dlt-selection);
+                    background: #193049; border-right: 1px solid var(--dlt-selection);
                     border-bottom: 1px solid var(--dlt-selection);
                 }
-                .dlt-study-caption { color: #bdcddd; font-size: 0.75em; flex: none; }
-                .dlt-study-word { margin-top: 6px; padding-left: 8px; border-left: 2px solid var(--dlt-selection); }
+                .dlt-study-caption { color: #d7e5f4; font-size: 0.8em; flex: none; }
+                .dlt-study-word { margin-top: 5px; }
                 .dlt-study-word-pair {
-                    display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px; color: var(--dlt-selection);
+                    display: flex; justify-content: center; align-items: baseline; flex-wrap: wrap; gap: 5px;
+                    color: var(--dlt-selection);
                 }
                 .dlt-study-word-pair strong { background: var(--dlt-selection-fill); padding: 0 4px; border-radius: 4px; }
                 .dlt-study-translation {
                     display: flex; flex-direction: column; min-height: 0;
-                    margin-top: 8px; padding-top: 6px; border-top: 1px solid #354559;
+                    margin-top: 4px; padding-top: 5px; border-top: 1px solid rgba(191, 217, 242, 0.20);
                 }
-                .dlt-study-translation-text { line-height: 1.45; }
-                .dlt-study-footer { flex: none; margin-top: 6px; font-size: 0.78em; color: #bdcddd; }
+                .dlt-study-translation-text { line-height: 1.4; text-wrap: pretty; }
             `}</style>
             {regions.map(({ rect }, index) => (
                 <button
@@ -274,34 +311,40 @@ export function LearnOverlay({
                         left: rect.left * widthFactor, top: rect.top * heightFactor,
                         width: (rect.right - rect.left) * widthFactor,
                         height: (rect.bottom - rect.top) * heightFactor,
-                        border: index === selection.region ? "2px solid #9ed1ff" : "1px solid #ffffff70",
+                        border: index === selection.region ? "1px solid #9ed1ffbf" : "1px solid #dae9f233",
                         background: "transparent", cursor: "pointer",
                     }}
                 />
             ))}
             <section aria-label="Learn English"
                 className="dlt-study"
+                data-side={panel.side}
                 style={{
-                    position: "absolute", zIndex: 1, left: "50%", transform: "translateX(-50%)",
-                    ...(panelAtTop ? { top: "8px" } : { bottom: "8px" }),
-                    width: "min(880px, 96%)", boxSizing: "border-box",
-                    background: "#101923", color: "#f2f6fc", border: "1px solid #62748c",
-                    borderRadius: 6, padding: "8px 12px", fontSize: "clamp(14px, 2vh, 20px)",
+                    [panel.side]: STUDY_PANEL_MARGIN, width: panel.width, maxHeight: panel.maxHeight,
                 }}
             >
                 <div className="dlt-study-actions">
-                    <button type="button" disabled={regions.length < 2} onClick={() => moveRegion(-1)} aria-label="Previous block">L1</button>
-                    <span>{selection.region + 1} / {regions.length}</span>
-                    <button type="button" disabled={regions.length < 2} onClick={() => moveRegion(1)} aria-label="Next block">R1</button>
-                    <button type="button" aria-pressed={selection.words} onClick={toggleWords}>
+                    {regions.length > 1 && (
+                        <>
+                            <button type="button" className="dlt-study-icon" onClick={() => moveRegion(-1)}
+                                aria-label="Previous block" title="Previous block (L1)">‹</button>
+                            <span className="dlt-study-block-count">{selection.region + 1} / {regions.length}</span>
+                            <button type="button" className="dlt-study-icon" onClick={() => moveRegion(1)}
+                                aria-label="Next block" title="Next block (R1)">›</button>
+                        </>
+                    )}
+                    <button type="button" aria-pressed={selection.words} onClick={toggleWords} title="Switch words and phrases (X)">
                         {selection.words ? "Words" : "Phrases"}
                     </button>
-                    {failedTranslation && <button type="button" onClick={failedTranslation.retry}>Retry translation</button>}
-                    <button type="button" onClick={dismiss}>Close</button>
+                    {failedTranslation && <button type="button" onClick={failedTranslation.retry} title="Retry translation (A)">Retry</button>}
+                    {translationScrollable && (
+                        <span className="dlt-study-scroll-hint" title="Scroll translation (L2/R2)">L2/R2 ↕</span>
+                    )}
+                    <button type="button" className="dlt-study-icon dlt-study-close" onClick={dismiss}
+                        aria-label="Close" title="Close (B)">×</button>
                 </div>
                 <div className="dlt-study-content">
                     <div className="dlt-study-original" data-popover={showPopover}>
-                        {showGlosses && <div className="dlt-study-caption">{phraseMatches?.length ? "Words and expressions" : "Words on their own"}</div>}
                         <div ref={studyText} lang="en" className="dlt-study-text" data-layout={activeLayout} data-glosses={showGlosses}>
                             {segments.map(segment => {
                                 if (!segment.selectable) return <span key={segment.start}>{reflowStudyText(segment.text)}</span>;
@@ -327,7 +370,6 @@ export function LearnOverlay({
                     </div>
                     {individualWordVisible && activeLayout === "row" && selectedWord && (
                         <div className="dlt-study-word">
-                            <div className="dlt-study-caption">{selectedSegment?.phrase ? "Expression on its own" : "Word on its own"}</div>
                             <div className="dlt-study-word-pair" aria-live="polite">
                                 <strong lang="en">{selectedWord}</strong>
                                 <span aria-hidden="true">→</span>
@@ -337,16 +379,11 @@ export function LearnOverlay({
                     )}
                     {interlinearError && <div role="alert" className="dlt-study-caption">{interlinearError}</div>}
                     <div className="dlt-study-translation">
-                        <div className="dlt-study-caption">Translation</div>
                         <div ref={translationViewport} aria-live="polite" className="dlt-study-translation-text"
                             lang={targetConfigured ? targetLanguage : undefined} dir="auto" tabIndex={0} aria-label="Full translation">
-                            {targetConfigured ? reflowStudyText(translationText(blockTranslation.value, region.text))
-                                : "Choose a translation language other than English in the Translation tab."}
+                            {fullTranslation}
                         </div>
                     </div>
-                </div>
-                <div className="dlt-study-footer">
-                    L1/R1 Blocks · D-pad / Left stick Move · L2/R2 Scroll translation · X Words/Phrases{failedTranslation ? " · A Retry" : ""} · B Close
                 </div>
             </section>
         </>
